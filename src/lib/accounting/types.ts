@@ -116,8 +116,8 @@ export function createEmptyWorkspace(): Workspace {
 
 export const BUDGET_KINDS: { kind: BudgetKind; label: string; level: number }[] = [
   { kind: "section", label: "Section", level: 0 },
-  { kind: "outcome", label: "Outcome", level: 1 },
-  { kind: "output", label: "Output", level: 2 },
+  { kind: "outcome", label: "Résultat", level: 1 },
+  { kind: "output", label: "Produit", level: 2 },
   { kind: "activity", label: "Activité", level: 3 },
-  { kind: "expense", label: "Ligne de dépense", level: 4 },
+  { kind: "expense", label: "Dépense", level: 4 },
 ];

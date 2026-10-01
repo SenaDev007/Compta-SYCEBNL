@@ -15,7 +15,7 @@ const inputSchema = z.object({
 
 export async function POST(request: NextRequest) {
   if (!originIsAllowed(request)) {
-    return NextResponse.json({ error: "Origine non autorisée." }, { status: 403 });
+    return NextResponse.json({ error: "La demande n’a pas pu être traitée." }, { status: 403 });
   }
   if (
     !process.env.DATABASE_URL ||
@@ -24,8 +24,7 @@ export async function POST(request: NextRequest) {
   ) {
     return NextResponse.json(
       {
-        error:
-          "La base cloud n’est pas encore configurée. Utilisez le mode local ou configurez DATABASE_URL et AUTH_SECRET.",
+        error: "La création de compte est temporairement indisponible. Réessayez plus tard.",
       },
       { status: 503 },
     );
@@ -94,8 +93,7 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json(
       {
-        error:
-          "Impossible de créer le compte. Vérifiez la configuration de la base puis réessayez.",
+        error: "Impossible de créer le compte pour le moment. Réessayez plus tard.",
       },
       { status: 503 },
     );

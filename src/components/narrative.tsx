@@ -1,6 +1,6 @@
 "use client";
-import { useMemo } from "react";
-import { Printer } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Download } from "lucide-react";
 import {
   money,
   operatingStatement,
@@ -8,10 +8,12 @@ import {
   projectBudget,
   yearEntries,
 } from "@/lib/accounting/calculations";
+import { exportPdf } from "@/lib/accounting/files";
 import { Button, Empty, Field, Panel } from "./ui";
 import type { ViewProps } from "./shared";
 
-export function NarrativeView({ workspace, setWorkspace, year }: ViewProps) {
+export function NarrativeView({ workspace, setWorkspace, year, notify }: ViewProps) {
+  const [exporting, setExporting] = useState(false);
   const entries = yearEntries(workspace.entries, year);
   const operating = operatingStatement(workspace.accounts, entries);
   const metrics = useMemo(() => {
@@ -90,18 +92,32 @@ export function NarrativeView({ workspace, setWorkspace, year }: ViewProps) {
     field: "organizationName" | "volunteerUse" | "membershipUse" | "perspectives",
     value: string,
   ) => setWorkspace((w) => ({ ...w, reportSettings: { ...w.reportSettings, [field]: value } }));
+  const createPdf = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      await exportPdf(workspace, year, "narrative");
+      notify("Le rapport narratif a été téléchargé.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Le rapport n’a pas pu être créé.");
+    } finally {
+      setExporting(false);
+    }
+  };
   return (
     <>
       <div className="page-head no-print">
         <div>
           <div className="page-kicker">Rapport de gestion · Exercice {year}</div>
           <h1>Rapport financier narratif</h1>
-          <p>Chiffres automatiques, commentaires personnalisables, prêt à imprimer en PDF.</p>
+          <p>
+            Chiffres automatiques et commentaires personnalisables, prêts à partager ou archiver.
+          </p>
         </div>
         <div className="actions">
-          <Button variant="primary" onClick={() => window.print()}>
-            <Printer />
-            Exporter en PDF
+          <Button variant="primary" disabled={exporting} onClick={() => void createPdf()}>
+            <Download />
+            {exporting ? "Préparation…" : "Télécharger le PDF"}
           </Button>
         </div>
       </div>
@@ -124,7 +140,7 @@ export function NarrativeView({ workspace, setWorkspace, year }: ViewProps) {
               />
             </Field>
             <Field label="Exercice">
-              <div className="input" style={{ background: "#f8faf8" }}>
+              <div className="narrative-exercise" aria-label={`Exercice ${year}`}>
                 {year}
               </div>
             </Field>

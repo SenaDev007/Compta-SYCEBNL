@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useRef, useState } from "react";
-import { FileUp, Plus, Search, Trash2 } from "lucide-react";
+import { FileUp, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { importAccounts } from "@/lib/accounting/files";
 import { Button, Empty, Field, Modal, Panel } from "./ui";
 import type { ViewProps } from "./shared";
@@ -8,6 +8,7 @@ import type { ViewProps } from "./shared";
 export function AccountsView({ workspace, setWorkspace, notify }: ViewProps) {
   const [query, setQuery] = useState("");
   const [modal, setModal] = useState(false);
+  const [editingCode, setEditingCode] = useState<string | null>(null);
   const [number, setNumber] = useState("");
   const [label, setLabel] = useState("");
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
@@ -26,13 +27,14 @@ export function AccountsView({ workspace, setWorkspace, notify }: ViewProps) {
       notify("Le numéro doit être numérique et le libellé obligatoire.");
       return;
     }
-    if (workspace.accounts.some((a) => a.number === code)) {
+    if (workspace.accounts.some((a) => a.number === code && a.number !== editingCode)) {
       notify("Ce numéro de compte existe déjà.");
       return;
     }
     if (
       workspace.accounts.some(
         (account) =>
+          account.number !== editingCode &&
           account.label.trim().toLocaleLowerCase("fr-FR") === title.toLocaleLowerCase("fr-FR"),
       )
     ) {
@@ -41,12 +43,18 @@ export function AccountsView({ workspace, setWorkspace, notify }: ViewProps) {
     }
     setWorkspace((current) => ({
       ...current,
-      accounts: [...current.accounts, { number: code, label: title, source: "custom" }],
+      accounts: editingCode
+        ? current.accounts.map((account) =>
+            account.number === editingCode ? { ...account, number: code, label: title } : account,
+          )
+        : [...current.accounts, { number: code, label: title, source: "custom" }],
     }));
+    const wasEditing = editingCode !== null;
+    setEditingCode(null);
     setNumber("");
     setLabel("");
     setModal(false);
-    notify("Compte ajouté au plan comptable.");
+    notify(wasEditing ? "Compte mis à jour." : "Compte ajouté au plan comptable.");
   };
   const upload = async (file?: File) => {
     if (!file) return;
@@ -66,9 +74,12 @@ export function AccountsView({ workspace, setWorkspace, notify }: ViewProps) {
   const remove = (code: string) => {
     const referenced =
       workspace.entries.some((e) => e.lines.some((l) => l.accountNumber === code)) ||
-      workspace.projects.some((p) => p.budgetLines.some((l) => l.accountNumber === code));
+      workspace.projects.some((p) => p.budgetLines.some((l) => l.accountNumber === code)) ||
+      workspace.reconciliations.some((item) => item.accountNumber === code);
     if (referenced) {
-      notify("Ce compte est utilisé dans une écriture ou un budget et ne peut pas être supprimé.");
+      notify(
+        "Ce compte est utilisé dans une écriture, un budget ou un rapprochement et ne peut pas être supprimé.",
+      );
       return;
     }
     if (pendingDelete !== code) {
@@ -82,20 +93,46 @@ export function AccountsView({ workspace, setWorkspace, notify }: ViewProps) {
     setPendingDelete(null);
     notify("Compte supprimé.");
   };
+  const edit = (account: (typeof workspace.accounts)[number]) => {
+    setEditingCode(account.number);
+    setNumber(account.number);
+    setLabel(account.label);
+    setModal(true);
+  };
+  const numberLocked = Boolean(
+    editingCode &&
+    (workspace.entries.some((entry) =>
+      entry.lines.some((line) => line.accountNumber === editingCode),
+    ) ||
+      workspace.projects.some((project) =>
+        project.budgetLines.some((line) => line.accountNumber === editingCode),
+      ) ||
+      workspace.reconciliations.some((item) => item.accountNumber === editingCode)),
+  );
   return (
     <>
       <div className="page-head">
         <div>
           <div className="page-kicker">Référentiel</div>
           <h1>Plan comptable</h1>
-          <p>Recherchez un compte, importez le référentiel MAP AFRIQUE ou créez une extension.</p>
+          <p>
+            Recherchez un compte, importez le référentiel de votre organisation ou créez un compte.
+          </p>
         </div>
         <div className="actions">
           <Button onClick={() => inputRef.current?.click()}>
             <FileUp />
-            Importer Excel / CSV
+            Importer des comptes
           </Button>
-          <Button variant="primary" onClick={() => setModal(true)}>
+          <Button
+            variant="primary"
+            onClick={() => {
+              setEditingCode(null);
+              setNumber("");
+              setLabel("");
+              setModal(true);
+            }}
+          >
             <Plus />
             Ajouter un compte
           </Button>
@@ -123,13 +160,12 @@ export function AccountsView({ workspace, setWorkspace, notify }: ViewProps) {
                 placeholder="Numéro de compte ou mot-clé…"
               />
             </div>
-            <span className="pill">Sources : import, personnalisés et exemples</span>
+            <span className="pill">Types : référentiel, personnalisés et exemples</span>
           </div>
           {workspace.accounts.some((a) => a.source === "demo") && (
             <div className="notice warning">
-              Le jeu de départ contient des comptes exemples, non certifiés. Importez le fichier MAP
-              AFRIQUE (colonnes numéro et libellé). L’import fusionne les numéros correspondants et
-              conserve les comptes personnalisés non remplacés.
+              Les comptes proposés au départ sont des exemples à confirmer. Importez le référentiel
+              comptable de votre organisation (numéro et libellé) pour le remplacer ou le compléter.
             </div>
           )}
         </div>
@@ -165,6 +201,9 @@ export function AccountsView({ workspace, setWorkspace, notify }: ViewProps) {
                       </span>
                     </td>
                     <td className="right">
+                      <Button size="small" variant="ghost" onClick={() => edit(account)}>
+                        <Pencil size={13} /> Modifier
+                      </Button>
                       <Button
                         size="small"
                         variant={pendingDelete === account.number ? "danger" : "ghost"}
@@ -183,12 +222,19 @@ export function AccountsView({ workspace, setWorkspace, notify }: ViewProps) {
       </Panel>
       {modal && (
         <Modal
-          title="Ajouter un compte"
+          title={editingCode ? "Modifier un compte" : "Ajouter un compte"}
           subtitle="Les comptes personnalisés restent dans votre espace."
           onClose={() => setModal(false)}
           footer={
             <>
-              <Button onClick={() => setModal(false)}>Annuler</Button>
+              <Button
+                onClick={() => {
+                  setModal(false);
+                  setEditingCode(null);
+                }}
+              >
+                Annuler
+              </Button>
               <Button variant="primary" onClick={save}>
                 Enregistrer
               </Button>
@@ -196,7 +242,14 @@ export function AccountsView({ workspace, setWorkspace, notify }: ViewProps) {
           }
         >
           <div className="form-grid">
-            <Field label="Numéro de compte">
+            <Field
+              label="Numéro de compte"
+              help={
+                numberLocked
+                  ? "Ce numéro est déjà utilisé dans les écritures ou les budgets."
+                  : undefined
+              }
+            >
               <input
                 className="input"
                 value={number}
@@ -204,6 +257,7 @@ export function AccountsView({ workspace, setWorkspace, notify }: ViewProps) {
                 inputMode="numeric"
                 placeholder="Ex. 521"
                 maxLength={12}
+                disabled={numberLocked}
               />
             </Field>
             <Field label="Libellé">

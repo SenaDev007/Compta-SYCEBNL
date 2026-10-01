@@ -5,7 +5,6 @@ import {
   ArrowLeftRight,
   BarChart3,
   BookOpen,
-  Cloud,
   Database,
   FileText,
   FolderKanban,
@@ -15,9 +14,10 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { createEmptyWorkspace, type Workspace } from "@/lib/accounting/types";
+import { validateWorkspace } from "@/lib/accounting/validation";
 import type { WorkspaceSetter } from "./shared";
 import { AccountsView } from "./accounts";
-import { CloudAccessModal, type CloudUser } from "./cloud-access";
+import { CloudAccessPage, type CloudUser } from "./cloud-access";
 import { Dashboard } from "./dashboard";
 import { DataManagementView } from "./data-management";
 import { JournalView } from "./journal";
@@ -48,22 +48,14 @@ const navItems: { id: string; label: string; icon: LucideIcon; section: string }
   { id: "data", label: "Données & sauvegardes", icon: Database, section: "PARAMÈTRES" },
 ];
 
-type SyncState = "loading" | "local" | "saving" | "synced" | "error" | "conflict";
-const GUEST_KEY = "compta-sycebnl.workspace.guest";
+type SyncState = "loading" | "saving" | "synced" | "error" | "conflict";
 const userKey = (id: string) => `compta-sycebnl.workspace.${id}`;
 
 function parseStoredWorkspace(raw: string | null): Workspace | null {
   if (!raw) return null;
   try {
-    const value = JSON.parse(raw) as Workspace;
-    if (
-      value?.schemaVersion === 1 &&
-      Array.isArray(value.accounts) &&
-      Array.isArray(value.entries) &&
-      Array.isArray(value.projects)
-    ) {
-      return value;
-    }
+    const checked = validateWorkspace(JSON.parse(raw));
+    if (checked.success) return checked.data;
   } catch {
     return null;
   }
@@ -80,14 +72,13 @@ function readLocalWorkspace(key: string): Workspace | null {
 
 export function AppShell() {
   const [workspace, setRawWorkspace] = useState<Workspace>(() => createEmptyWorkspace());
-  const [currentKey, setCurrentKey] = useState(GUEST_KEY);
+  const [currentKey, setCurrentKey] = useState("");
   const [ready, setReady] = useState(false);
   const [active, setActive] = useState("dashboard");
   const [year, setYear] = useState(new Date().getFullYear());
   const [toast, setToast] = useState("");
   const [cloudUser, setCloudUser] = useState<CloudUser | null>(null);
   const [syncState, setSyncState] = useState<SyncState>("loading");
-  const [cloudModal, setCloudModal] = useState(false);
   const versionRef = useRef<number | null>(null);
   const lastSyncRef = useRef("");
   const syncInProgressRef = useRef(false);
@@ -114,11 +105,11 @@ export function AppShell() {
     let cancelled = false;
 
     const initialize = async () => {
-      const guest = readLocalWorkspace(GUEST_KEY) || createEmptyWorkspace();
-      let chosen = guest;
+      let chosen = createEmptyWorkspace();
       let user: CloudUser | null = null;
+      let key = "";
       let cloudVersion: number | null = null;
-      let nextSyncState: SyncState = "local";
+      let nextSyncState: SyncState = "error";
       let syncedSnapshot = "";
 
       try {
@@ -126,61 +117,55 @@ export function AppShell() {
           credentials: "include",
           cache: "no-store",
         });
+        if (!response.ok) throw new Error("Session indisponible");
         const data = await response.json();
-
-        if (data.user) {
-          user = data.user as CloudUser;
-          const key = userKey(user.id);
-          setCurrentKey(key);
-          const userLocal = readLocalWorkspace(key);
-          chosen = userLocal || createEmptyWorkspace();
-          nextSyncState = "error";
-
-          const remoteResponse = await fetch("/api/workspace", {
-            credentials: "include",
-            cache: "no-store",
-          });
-          if (remoteResponse.ok) {
-            const remote = (await remoteResponse.json()) as {
-              version: number;
-              state: Workspace;
-              updatedAt: string;
-            };
-            cloudVersion = remote.version;
-            const remoteDate = Date.parse(remote.state.updatedAt || remote.updatedAt || "");
-            const localDate = Date.parse(chosen.updatedAt || "");
-
-            if (userLocal && Number.isFinite(localDate) && localDate > remoteDate) {
-              const save = await fetch("/api/workspace", {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                credentials: "include",
-                body: JSON.stringify({ version: cloudVersion, state: userLocal }),
-              });
-              if (save.ok) {
-                const saved = await save.json();
-                cloudVersion = saved.version;
-                chosen = userLocal;
-                nextSyncState = "synced";
-              } else if (save.status === 409) {
-                chosen = userLocal;
-                nextSyncState = "conflict";
-              } else {
-                chosen = userLocal;
-                nextSyncState = "error";
-              }
-            } else {
-              chosen = remote.state;
-              nextSyncState = "synced";
-            }
-            syncedSnapshot = JSON.stringify(chosen);
+        if (!data.user) {
+          if (!cancelled) {
+            setCurrentKey("");
+            setRawWorkspace(createEmptyWorkspace());
+            setCloudUser(null);
+            setSyncState("error");
+            setReady(true);
           }
+          return;
+        }
+
+        user = data.user as CloudUser;
+        key = userKey(user.id);
+        const userLocal = readLocalWorkspace(key);
+        if (userLocal) chosen = userLocal;
+
+        const remoteResponse = await fetch("/api/workspace", {
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (!remoteResponse.ok) throw new Error("Espace indisponible");
+        const remote = (await remoteResponse.json()) as {
+          version: number;
+          state: Workspace;
+          updatedAt: string;
+        };
+        const checkedRemote = validateWorkspace(remote.state);
+        if (!checkedRemote.success) throw new Error("Espace à vérifier");
+        cloudVersion = remote.version;
+        const remoteDate = Date.parse(checkedRemote.data.updatedAt || remote.updatedAt || "");
+        const localDate = Date.parse(userLocal?.updatedAt || "");
+
+        if (userLocal && Number.isFinite(localDate) && localDate > remoteDate) {
+          chosen = userLocal;
+          nextSyncState = "conflict";
+          syncedSnapshot = JSON.stringify(checkedRemote.data);
+        } else {
+          chosen = checkedRemote.data;
+          nextSyncState = "synced";
+          syncedSnapshot = JSON.stringify(chosen);
         }
       } catch {
-        nextSyncState = user ? "error" : "local";
+        nextSyncState = "error";
       }
 
       if (cancelled) return;
+      setCurrentKey(key);
       setRawWorkspace(chosen);
       setCloudUser(user);
       versionRef.current = cloudVersion;
@@ -196,7 +181,7 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || !cloudUser || !currentKey) return;
     try {
       localStorage.setItem(currentKey, JSON.stringify(workspace));
       storageWarningShown.current = false;
@@ -204,12 +189,15 @@ export function AppShell() {
       if (!storageWarningShown.current) {
         storageWarningShown.current = true;
         window.setTimeout(
-          () => notify("Stockage navigateur saturé : téléchargez une sauvegarde JSON."),
+          () =>
+            notify(
+              "L’espace disponible sur cet appareil est insuffisant. Téléchargez une sauvegarde.",
+            ),
           0,
         );
       }
     }
-  }, [workspace, currentKey, ready, notify]);
+  }, [workspace, currentKey, ready, cloudUser, notify]);
 
   useEffect(() => {
     if (
@@ -238,7 +226,7 @@ export function AppShell() {
           setSyncState("conflict");
           return;
         }
-        if (!response.ok) throw new Error("Échec cloud");
+        if (!response.ok) throw new Error("Échec de l’enregistrement");
         const result = await response.json();
         versionRef.current = result.version;
         lastSyncRef.current = serialized;
@@ -253,52 +241,41 @@ export function AppShell() {
     return () => clearTimeout(timer);
   }, [workspace, ready, cloudUser, syncState]);
 
-  const connectCloud = async (user: CloudUser, mergeGuest: boolean) => {
+  const connectCloud = async (user: CloudUser) => {
     try {
       const response = await fetch("/api/workspace", {
         credentials: "include",
         cache: "no-store",
       });
       if (!response.ok) {
-        throw new Error((await response.json()).error || "Espace cloud inaccessible.");
+        throw new Error("Impossible de charger votre espace.");
       }
       const remote = (await response.json()) as { version: number; state: Workspace };
+      const checkedRemote = validateWorkspace(remote.state);
+      if (!checkedRemote.success) throw new Error("Votre espace doit être vérifié.");
       const key = userKey(user.id);
       const cached = readLocalWorkspace(key);
-      let chosen = remote.state;
-      let version = remote.version;
-      const guest = readLocalWorkspace(GUEST_KEY);
-      const local = mergeGuest ? guest : cached;
-
-      if (local) {
-        const localDate = Date.parse(local.updatedAt || "");
-        const remoteDate = Date.parse(remote.state.updatedAt || "");
-        if (mergeGuest || (Number.isFinite(localDate) && localDate > remoteDate)) {
-          const save = await fetch("/api/workspace", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({ version: remote.version, state: local }),
-          });
-          if (!save.ok) {
-            throw new Error((await save.json()).error || "Fusion des données impossible.");
-          }
-          const saved = await save.json();
-          chosen = local;
-          version = saved.version;
-        }
-      }
+      let chosen = checkedRemote.data;
+      const version = remote.version;
+      const localDate = Date.parse(cached?.updatedAt || "");
+      const remoteDate = Date.parse(checkedRemote.data.updatedAt || "");
+      const hasNewerLocal = Boolean(cached && Number.isFinite(localDate) && localDate > remoteDate);
+      if (hasNewerLocal && cached) chosen = cached;
 
       setCurrentKey(key);
       setRawWorkspace(chosen);
       setCloudUser(user);
       versionRef.current = version;
-      lastSyncRef.current = JSON.stringify(chosen);
-      setSyncState("synced");
-      notify(`Espace cloud prêt pour ${user.email}.`);
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "Connexion cloud impossible.");
-      throw error;
+      lastSyncRef.current = JSON.stringify(hasNewerLocal ? checkedRemote.data : chosen);
+      setSyncState(hasNewerLocal ? "conflict" : "synced");
+      setReady(true);
+    } catch {
+      try {
+        await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+      } catch {
+        // Le prochain contrôle de session gardera les données masquées.
+      }
+      throw new Error("Votre espace n’a pas pu être ouvert. Réessayez dans quelques instants.");
     }
   };
 
@@ -306,16 +283,16 @@ export function AppShell() {
     try {
       await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
     } catch {
-      // L’affichage local reste disponible même si le serveur de session est hors ligne.
+      // L’écran d’accès masque les données même si la fermeture de session échoue.
     }
-    const guest = readLocalWorkspace(GUEST_KEY) || createEmptyWorkspace();
     setCloudUser(null);
-    setCurrentKey(GUEST_KEY);
+    setCurrentKey("");
     versionRef.current = null;
     lastSyncRef.current = "";
-    setRawWorkspace(guest);
-    setSyncState("local");
-    notify("Session cloud fermée. L’espace local est affiché.");
+    setRawWorkspace(createEmptyWorkspace());
+    setSyncState("error");
+    setReady(true);
+    setActive("dashboard");
   };
 
   const resolveConflict = async (choice: "remote" | "local") => {
@@ -324,7 +301,7 @@ export function AppShell() {
         credentials: "include",
         cache: "no-store",
       });
-      if (!remoteResponse.ok) throw new Error("Impossible de charger la version cloud.");
+      if (!remoteResponse.ok) throw new Error("Impossible de charger l’autre version.");
       const remote = (await remoteResponse.json()) as { version: number; state: Workspace };
 
       if (choice === "remote") {
@@ -339,7 +316,7 @@ export function AppShell() {
           credentials: "include",
           body: JSON.stringify({ version: remote.version, state: workspace }),
         });
-        if (!save.ok) throw new Error("La version locale n’a pas pu remplacer la version cloud.");
+        if (!save.ok) throw new Error("Cette version n’a pas pu être conservée.");
         const result = await save.json();
         versionRef.current = result.version;
         lastSyncRef.current = JSON.stringify(workspace);
@@ -347,22 +324,24 @@ export function AppShell() {
       }
       notify(
         choice === "remote"
-          ? "Version cloud chargée."
-          : "Version locale conservée et envoyée au cloud.",
+          ? "L’autre version a été chargée."
+          : "Cette version a été conservée et enregistrée.",
       );
     } catch (error) {
       notify(error instanceof Error ? error.message : "Conflit non résolu.");
     }
   };
 
-  const title = navItems.find((item) => item.id === active)?.label || "Tableau de bord";
+  const title =
+    active === "new-entry"
+      ? "Journal des écritures"
+      : navItems.find((item) => item.id === active)?.label || "Tableau de bord";
   const syncLabels: Record<SyncState, string> = {
-    loading: "Chargement…",
-    local: "Sur cet appareil",
-    saving: "Synchronisation…",
-    synced: "Cloud à jour",
-    error: "Synchronisation à vérifier",
-    conflict: "Conflit de versions",
+    loading: "Vérification…",
+    saving: "Enregistrement…",
+    synced: "Tout est à jour",
+    error: "Enregistrement à vérifier",
+    conflict: "Versions à comparer",
   };
   const statusClass =
     syncState === "error" || syncState === "conflict"
@@ -376,6 +355,9 @@ export function AppShell() {
   switch (active) {
     case "journal":
       content = <JournalView {...viewProps} />;
+      break;
+    case "new-entry":
+      content = <JournalView {...viewProps} openOnMount />;
       break;
     case "accounts":
       content = <AccountsView {...viewProps} />;
@@ -397,16 +379,15 @@ export function AppShell() {
         <DataManagementView
           workspace={workspace}
           setWorkspace={setWorkspace}
-          cloudUser={cloudUser}
+          cloudUser={cloudUser!}
           cloudStatus={syncLabels[syncState]}
-          onConnect={() => setCloudModal(true)}
           onLogout={() => void logout()}
           notify={notify}
         />
       );
       break;
     default:
-      content = <Dashboard {...viewProps} />;
+      content = <Dashboard {...viewProps} onNewEntry={() => setActive("new-entry")} />;
   }
 
   const mobileItems = ["dashboard", "journal", "projects", "reports", "data"];
@@ -423,7 +404,7 @@ export function AppShell() {
           </div>
           <div className="auth-quote">
             <h1>Une comptabilité au service de vos projets.</h1>
-            <p>Chargement de votre espace sécurisé…</p>
+            <p>Préparation de l’accès à votre espace.</p>
           </div>
           <div className="auth-foot">Référentiel OHADA · SYCEBNL</div>
         </div>
@@ -433,7 +414,7 @@ export function AppShell() {
               S+
             </div>
             <h2>Préparation de votre espace</h2>
-            <p>Nous vérifions vos données enregistrées localement et dans le cloud.</p>
+            <p>Nous préparons votre accès sécurisé.</p>
             <div className="progress">
               <span style={{ width: "65%" }} />
             </div>
@@ -442,6 +423,8 @@ export function AppShell() {
       </div>
     );
   }
+
+  if (!cloudUser) return <CloudAccessPage onSuccess={connectCloud} />;
 
   return (
     <div className="app-shell">
@@ -463,7 +446,7 @@ export function AppShell() {
                   const Icon = item.icon;
                   return (
                     <button
-                      className={`nav-item ${active === item.id ? "active" : ""}`}
+                      className={`nav-item ${active === item.id || (item.id === "journal" && active === "new-entry") ? "active" : ""}`}
                       key={item.id}
                       onClick={() => setActive(item.id)}
                       title={item.label}
@@ -485,8 +468,8 @@ export function AppShell() {
               {cloudUser ? cloudUser.email.slice(0, 1).toUpperCase() : "L"}
             </div>
             <div>
-              <div className="profile-name">{cloudUser ? cloudUser.email : "Espace local"}</div>
-              <div className="profile-mode">{cloudUser ? "Compte privé" : "Cet appareil"}</div>
+              <div className="profile-name">{cloudUser.email}</div>
+              <div className="profile-mode">Compte connecté</div>
             </div>
           </div>
         </div>
@@ -516,27 +499,23 @@ export function AppShell() {
               <i className={`sync-dot ${statusClass}`} />
               {syncLabels[syncState]}
             </span>
-            {!cloudUser ? (
-              <Button size="small" onClick={() => setCloudModal(true)}>
-                <Cloud size={14} />
-                Cloud
-              </Button>
-            ) : (
-              <button
-                className="btn ghost small"
-                title="Déconnexion cloud"
-                onClick={() => void logout()}
-              >
-                <LogOut size={14} />
-              </button>
-            )}
+            <button
+              className="btn ghost small"
+              title="Se déconnecter"
+              onClick={() => void logout()}
+            >
+              <LogOut size={14} />
+            </button>
           </div>
         </header>
         <div className="content">
           {syncState === "error" && cloudUser && (
             <div className="notice warning no-print" style={{ marginBottom: 15 }}>
-              Synchronisation cloud indisponible. La copie locale reste enregistrée ; vérifiez les
-              variables Vercel et la migration de base de données.
+              La dernière modification n’a pas pu être enregistrée dans votre espace. Vos données
+              restent conservées sur cet appareil. Vérifiez votre connexion, puis réessayez.
+              <Button size="small" onClick={() => setSyncState("loading")}>
+                Réessayer
+              </Button>
             </div>
           )}
           {content}
@@ -559,7 +538,9 @@ export function AppShell() {
                     : "Journal";
           return (
             <button
-              className={active === id ? "active" : ""}
+              className={
+                active === id || (id === "journal" && active === "new-entry") ? "active" : ""
+              }
               key={id}
               onClick={() => setActive(id)}
             >
@@ -570,23 +551,21 @@ export function AppShell() {
         })}
       </nav>
 
-      {cloudModal && (
-        <CloudAccessModal onClose={() => setCloudModal(false)} onSuccess={connectCloud} />
-      )}
       {syncState === "conflict" && (
         <Modal
-          title="Versions différentes"
-          subtitle="Une autre version cloud a changé depuis votre dernier chargement."
+          title="Deux versions à comparer"
+          subtitle="Votre espace a changé depuis la dernière consultation."
           onClose={() => {}}
         >
           <div className="notice warning">
-            Aucune donnée n’a été écrasée. Choisissez la copie à garder. « Garder sur cet appareil »
-            enverra cette version au compte cloud.
+            Aucune donnée n’a été remplacée. Choisissez la version que vous souhaitez conserver.
           </div>
           <div className="actions" style={{ marginTop: 15 }}>
-            <Button onClick={() => void resolveConflict("remote")}>Charger la version cloud</Button>
+            <Button onClick={() => void resolveConflict("remote")}>
+              Conserver l’autre version
+            </Button>
             <Button variant="primary" onClick={() => void resolveConflict("local")}>
-              Garder sur cet appareil
+              Conserver cette version
             </Button>
           </div>
         </Modal>

@@ -13,7 +13,7 @@ const inputSchema = z.object({
 
 export async function POST(request: NextRequest) {
   if (!originIsAllowed(request)) {
-    return NextResponse.json({ error: "Origine non autorisée." }, { status: 403 });
+    return NextResponse.json({ error: "La demande n’a pas pu être traitée." }, { status: 403 });
   }
   if (
     !process.env.DATABASE_URL ||
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     process.env.AUTH_SECRET.length < 32
   ) {
     return NextResponse.json(
-      { error: "La base cloud n’est pas configurée. Le mode local reste disponible." },
+      { error: "La connexion est temporairement indisponible. Réessayez plus tard." },
       { status: 503 },
     );
   }
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
     return setSessionCookie(NextResponse.json({ user }), token);
   } catch {
     return NextResponse.json(
-      { error: "Connexion cloud indisponible. Vérifiez DATABASE_URL et la migration." },
+      { error: "Impossible de vous connecter pour le moment. Réessayez plus tard." },
       { status: 503 },
     );
   }

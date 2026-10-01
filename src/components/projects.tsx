@@ -58,6 +58,10 @@ export function ProjectsView({ workspace, setWorkspace, year, notify }: ViewProp
       notify("Le code et l’intitulé du projet sont obligatoires.");
       return;
     }
+    if (startDate && endDate && startDate > endDate) {
+      notify("La date de fin ne peut pas précéder la date de début.");
+      return;
+    }
     if (
       workspace.projects.some(
         (p) => p.id !== projectFormId && p.code.toLowerCase() === code.trim().toLowerCase(),
@@ -365,7 +369,7 @@ export function ProjectsView({ workspace, setWorkspace, year, notify }: ViewProp
         )}
         <Panel
           title="Budget détaillé"
-          caption="Section › Outcome › Output › Activité › ligne de dépense"
+          caption="Section › Résultat › Produit › Activité › Dépense"
           action={
             <Button size="small" onClick={() => openLine("section")}>
               <Plus size={14} />
@@ -375,7 +379,7 @@ export function ProjectsView({ workspace, setWorkspace, year, notify }: ViewProp
         >
           {ordered.length === 0 ? (
             <Empty title="Aucune ligne de budget">
-              Créez une structure ou importez le budget du bailleur au format Excel/CSV.
+              Créez une structure ou importez le budget fourni par votre partenaire financier.
             </Empty>
           ) : (
             <div className="table-wrap">
@@ -737,7 +741,7 @@ export function ProjectsView({ workspace, setWorkspace, year, notify }: ViewProp
                 className="input"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                placeholder="Ex. GSAT-26"
+                placeholder="Ex. PROJ-001"
               />
             </Field>
             <Field label="Intitulé">

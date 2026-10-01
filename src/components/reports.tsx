@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Download, Printer } from "lucide-react";
+import { Download } from "lucide-react";
 import {
   balanceReport,
   employmentResources,
@@ -12,7 +12,7 @@ import {
   projectBudget,
   yearEntries,
 } from "@/lib/accounting/calculations";
-import { exportWorkbook } from "@/lib/accounting/files";
+import { exportPdf, exportWorkbook } from "@/lib/accounting/files";
 import { Button, Empty, Panel } from "./ui";
 import type { ViewProps } from "./shared";
 
@@ -38,8 +38,9 @@ const tabs: { id: ReportTab; label: string }[] = [
   { id: "budget", label: "Suivi budgétaire" },
 ];
 
-export function ReportsView({ workspace, year }: ViewProps) {
+export function ReportsView({ workspace, year, notify }: ViewProps) {
   const [tab, setTab] = useState<ReportTab>("balance");
+  const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
   const [accountNumber, setAccountNumber] = useState("");
   const [projectId, setProjectId] = useState("Tous les projets");
   const [budgetDisplay, setBudgetDisplay] = useState<BudgetDisplay>("line");
@@ -102,7 +103,21 @@ export function ReportsView({ workspace, year }: ViewProps) {
       a.number.localeCompare(b.number, "fr", { numeric: true }),
     );
   }, [filteredProjects, entries, workspace.accounts]);
-  const print = () => window.print();
+  const download = async (format: "excel" | "pdf") => {
+    if (exporting) return;
+    setExporting(format);
+    try {
+      if (format === "excel") await exportWorkbook(workspace, year);
+      else await exportPdf(workspace, year, "financial");
+      notify(
+        format === "excel" ? "Le classeur a été téléchargé." : "Le rapport PDF a été téléchargé.",
+      );
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Le document n’a pas pu être créé.");
+    } finally {
+      setExporting(null);
+    }
+  };
   const totalBudgetByAccount = budgetByAccount.reduce(
     (total, row) => ({
       budget: total.budget + row.budget,
@@ -133,13 +148,17 @@ export function ReportsView({ workspace, year }: ViewProps) {
           <p>États calculés depuis les écritures équilibrées du journal.</p>
         </div>
         <div className="actions">
-          <Button onClick={() => exportWorkbook(workspace, year)}>
+          <Button disabled={exporting !== null} onClick={() => void download("excel")}>
             <Download />
-            Exporter Excel
+            {exporting === "excel" ? "Préparation…" : "Télécharger Excel"}
           </Button>
-          <Button variant="primary" onClick={print}>
-            <Printer />
-            Imprimer / PDF
+          <Button
+            variant="primary"
+            disabled={exporting !== null}
+            onClick={() => void download("pdf")}
+          >
+            <Download />
+            {exporting === "pdf" ? "Préparation…" : "Télécharger PDF"}
           </Button>
         </div>
       </div>

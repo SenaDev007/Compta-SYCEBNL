@@ -95,7 +95,7 @@ export function validateWorkspace(
 ): { success: true; data: Workspace } | { success: false; message: string } {
   const parsed = workspaceSchema.safeParse(input);
   if (!parsed.success) {
-    return { success: false, message: "Le format de l’espace comptable est invalide." };
+    return { success: false, message: "Les données de cette sauvegarde ne sont pas reconnues." };
   }
   const workspace = parsed.data as Workspace;
   const accountNumbers = new Set(workspace.accounts.map((account) => account.number));
@@ -105,7 +105,7 @@ export function validateWorkspace(
 
   const projectMap = new Map(workspace.projects.map((project) => [project.id, project]));
   if (projectMap.size !== workspace.projects.length) {
-    return { success: false, message: "Le portefeuille contient un identifiant projet en double." };
+    return { success: false, message: "Deux projets utilisent la même référence." };
   }
 
   const entryIds = new Set<string>();
@@ -113,7 +113,7 @@ export function validateWorkspace(
     if (entryIds.has(entry.id)) {
       return {
         success: false,
-        message: "Le journal contient un identifiant d’écriture en double.",
+        message: "Le journal contient une référence d’écriture en double.",
       };
     }
     entryIds.add(entry.id);
@@ -201,7 +201,7 @@ export function validateWorkspace(
     if (ids.size !== project.budgetLines.length) {
       return {
         success: false,
-        message: `La hiérarchie budgétaire du projet ${project.code} contient un identifiant en double.`,
+        message: `La hiérarchie budgétaire du projet ${project.code} contient une ligne en double.`,
       };
     }
 

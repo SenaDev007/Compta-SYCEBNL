@@ -1,12 +1,18 @@
 "use client";
 import { useMemo, useState } from "react";
-import { Plus, Search, Trash2, X } from "lucide-react";
+import { Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import type { Entry, JournalCode, JournalLine } from "@/lib/accounting/types";
 import { entryBalanced, entryCredits, entryDebits, money } from "@/lib/accounting/calculations";
 import { Button, Empty, Field, Modal, Panel } from "./ui";
 import type { ViewProps } from "./shared";
 
-type DraftLine = { accountNumber: string; debit: string; credit: string; budgetLineId: string };
+type DraftLine = {
+  id?: string;
+  accountNumber: string;
+  debit: string;
+  credit: string;
+  budgetLineId: string;
+};
 const journals: JournalCode[] = ["AC", "VE", "BQ", "CA", "OD"];
 const newDraftLine = (): DraftLine => ({
   accountNumber: "",
@@ -15,10 +21,17 @@ const newDraftLine = (): DraftLine => ({
   budgetLineId: "",
 });
 
-export function JournalView({ workspace, setWorkspace, year, notify }: ViewProps) {
+export function JournalView({
+  workspace,
+  setWorkspace,
+  year,
+  notify,
+  openOnMount = false,
+}: ViewProps & { openOnMount?: boolean }) {
   const [query, setQuery] = useState("");
   const [journalFilter, setJournalFilter] = useState("Tous les journaux");
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(openOnMount);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [journal, setJournal] = useState<JournalCode>("OD");
@@ -48,6 +61,7 @@ export function JournalView({ workspace, setWorkspace, year, notify }: ViewProps
   const expenseBudgets = project?.budgetLines.filter((line) => line.kind === "expense") || [];
   const closeForm = () => {
     setShowForm(false);
+    setEditingId(null);
     setReference("");
     setLabel("");
     setProjectId("");
@@ -64,6 +78,18 @@ export function JournalView({ workspace, setWorkspace, year, notify }: ViewProps
     }
     if (!balanced) {
       notify("L’écriture doit être équilibrée et son montant supérieur à zéro.");
+      return;
+    }
+    if (
+      workspace.entries.some(
+        (entry) =>
+          entry.id !== editingId &&
+          entry.journal === journal &&
+          entry.reference.trim().toLocaleLowerCase("fr-FR") ===
+            reference.trim().toLocaleLowerCase("fr-FR"),
+      )
+    ) {
+      notify("Ce numéro de pièce est déjà utilisé dans ce journal.");
       return;
     }
     if (projectId && !workspace.projects.some((p) => p.id === projectId)) {
@@ -84,13 +110,16 @@ export function JournalView({ workspace, setWorkspace, year, notify }: ViewProps
       }
       if (
         line.budgetLineId &&
-        (!project || !project.budgetLines.some((b) => b.id === line.budgetLineId))
+        (!project ||
+          !project.budgetLines.some(
+            (budgetLine) => budgetLine.id === line.budgetLineId && budgetLine.kind === "expense",
+          ))
       ) {
         notify("La ligne budgétaire ne correspond pas au projet choisi.");
         return;
       }
       ledgerLines.push({
-        id: crypto.randomUUID(),
+        id: line.id || crypto.randomUUID(),
         accountNumber: line.accountNumber,
         debit,
         credit,
@@ -98,22 +127,43 @@ export function JournalView({ workspace, setWorkspace, year, notify }: ViewProps
       });
     }
     const entry: Entry = {
-      id: crypto.randomUUID(),
+      id: editingId || crypto.randomUUID(),
       date,
       journal,
       reference: reference.trim(),
       label: label.trim(),
       ...(projectId ? { projectId } : {}),
       lines: ledgerLines,
-      createdAt: new Date().toISOString(),
+      createdAt:
+        workspace.entries.find((existing) => existing.id === editingId)?.createdAt ||
+        new Date().toISOString(),
     };
     if (!entryBalanced(entry) || entryDebits(entry) <= 0 || entryCredits(entry) <= 0) {
       notify("Contrôle en partie double échoué.");
       return;
     }
-    setWorkspace((current) => ({ ...current, entries: [entry, ...current.entries] }));
+    setWorkspace((current) => {
+      const previous = current.entries.find((existing) => existing.id === editingId);
+      const changedLineIds = new Set(previous?.lines.map((line) => line.id) || []);
+      return {
+        ...current,
+        entries: editingId
+          ? current.entries.map((existing) => (existing.id === editingId ? entry : existing))
+          : [entry, ...current.entries],
+        reconciliations: editingId
+          ? current.reconciliations.map((item) => ({
+              ...item,
+              checkedLineIds: item.checkedLineIds.filter((id) => !changedLineIds.has(id)),
+            }))
+          : current.reconciliations,
+      };
+    });
     closeForm();
-    notify("Écriture équilibrée enregistrée.");
+    notify(
+      editingId
+        ? "Écriture mise à jour. Vérifiez à nouveau son pointage bancaire."
+        : "Écriture équilibrée enregistrée.",
+    );
   };
   const remove = (entry: Entry) => {
     if (pendingDelete !== entry.id) {
@@ -133,6 +183,24 @@ export function JournalView({ workspace, setWorkspace, year, notify }: ViewProps
   };
   const updateLine = (index: number, patch: Partial<DraftLine>) =>
     setLines((current) => current.map((line, i) => (i === index ? { ...line, ...patch } : line)));
+  const editEntry = (entry: Entry) => {
+    setEditingId(entry.id);
+    setDate(entry.date);
+    setJournal(entry.journal);
+    setReference(entry.reference);
+    setLabel(entry.label);
+    setProjectId(entry.projectId || "");
+    setLines(
+      entry.lines.map((line) => ({
+        id: line.id,
+        accountNumber: line.accountNumber,
+        debit: String(line.debit),
+        credit: String(line.credit),
+        budgetLineId: line.budgetLineId || "",
+      })),
+    );
+    setShowForm(true);
+  };
   return (
     <>
       <div className="page-head">
@@ -145,6 +213,11 @@ export function JournalView({ workspace, setWorkspace, year, notify }: ViewProps
           <Button
             variant="primary"
             onClick={() => {
+              setEditingId(null);
+              setReference("");
+              setLabel("");
+              setProjectId("");
+              setLines([newDraftLine(), newDraftLine()]);
               setDate(`${year}-${new Date().toISOString().slice(5, 10)}`);
               setShowForm(true);
             }}
@@ -218,6 +291,9 @@ export function JournalView({ workspace, setWorkspace, year, notify }: ViewProps
                       <span className="pill green">{entryBalanced(entry) ? "OK" : "Écart"}</span>
                     </td>
                     <td className="right">
+                      <Button size="small" variant="ghost" onClick={() => editEntry(entry)}>
+                        <Pencil size={13} /> Modifier
+                      </Button>
                       <Button
                         size="small"
                         variant={pendingDelete === entry.id ? "danger" : "ghost"}
@@ -236,7 +312,7 @@ export function JournalView({ workspace, setWorkspace, year, notify }: ViewProps
       </Panel>
       {showForm && (
         <Modal
-          title="Nouvelle écriture"
+          title={editingId ? "Modifier une écriture" : "Nouvelle écriture"}
           subtitle="Complétez les informations, puis contrôlez l’équilibre avant enregistrement."
           wide
           onClose={closeForm}
@@ -244,7 +320,7 @@ export function JournalView({ workspace, setWorkspace, year, notify }: ViewProps
             <>
               <Button onClick={closeForm}>Annuler</Button>
               <Button variant="primary" onClick={save} disabled={!balanced}>
-                Enregistrer l’écriture
+                {editingId ? "Enregistrer les modifications" : "Enregistrer l’écriture"}
               </Button>
             </>
           }

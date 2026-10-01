@@ -11,6 +11,7 @@ export function ReconciliationView({ workspace, setWorkspace, year, notify }: Vi
   const [accountNumber, setAccountNumber] = useState(bankAccounts[0]?.number || "");
   const [statementDraft, setStatementDraft] = useState("");
   const [asOfDraft, setAsOfDraft] = useState(`${year}-12-31`);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const selected = workspace.reconciliations.find((r) => r.accountNumber === accountNumber);
   const reconciliation: Reconciliation = selected || {
     accountNumber,
@@ -77,6 +78,20 @@ export function ReconciliationView({ workspace, setWorkspace, year, notify }: Vi
         ),
       }));
   };
+  const deleteReconciliation = () => {
+    if (!selected) return;
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    setWorkspace((w) => ({
+      ...w,
+      reconciliations: w.reconciliations.filter((item) => item.accountNumber !== accountNumber),
+    }));
+    setStatementDraft("");
+    setConfirmDelete(false);
+    notify("Le rapprochement a été supprimé. Les écritures bancaires sont conservées.");
+  };
   return (
     <>
       <div className="page-head">
@@ -112,6 +127,7 @@ export function ReconciliationView({ workspace, setWorkspace, year, notify }: Vi
                     onChange={(e) => {
                       setAccountNumber(e.target.value);
                       setStatementDraft("");
+                      setConfirmDelete(false);
                     }}
                   >
                     {bankAccounts.map((a) => (
@@ -146,6 +162,14 @@ export function ReconciliationView({ workspace, setWorkspace, year, notify }: Vi
                 <Button variant="primary" onClick={saveStatement}>
                   Enregistrer le solde
                 </Button>
+                {selected && (
+                  <Button
+                    variant={confirmDelete ? "danger" : "ghost"}
+                    onClick={deleteReconciliation}
+                  >
+                    {confirmDelete ? "Confirmer la suppression" : "Supprimer le rapprochement"}
+                  </Button>
+                )}
                 <span className="panel-caption">
                   Les opérations postérieures à la date choisie ne sont pas incluses.
                 </span>

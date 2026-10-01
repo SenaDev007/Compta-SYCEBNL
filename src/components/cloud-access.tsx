@@ -1,22 +1,20 @@
 "use client";
-import { useState } from "react";
-import { Button, Field, Modal } from "./ui";
+
+import { useState, type FormEvent } from "react";
+import { Button, Field } from "./ui";
 
 export type CloudUser = { id: string; email: string };
-export function CloudAccessModal({
-  onClose,
-  onSuccess,
-}: {
-  onClose: () => void;
-  onSuccess: (user: CloudUser, mergeGuest: boolean) => Promise<void>;
-}) {
+
+export function CloudAccessPage({ onSuccess }: { onSuccess: (user: CloudUser) => Promise<void> }) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [merge, setMerge] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const submit = async () => {
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (busy) return;
     setBusy(true);
     setError("");
     try {
@@ -24,105 +22,124 @@ export function CloudAccessModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
+        cache: "no-store",
         body: JSON.stringify({ email, password }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Connexion impossible.");
-      await onSuccess(data.user, mode === "register" && merge);
-      onClose();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Connexion impossible.");
+      if (!response.ok || !data.user) {
+        throw new Error(
+          data.error || "Accès impossible pour le moment. Vérifiez vos informations.",
+        );
+      }
+      await onSuccess(data.user as CloudUser);
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Accès impossible pour le moment. Réessayez dans quelques instants.",
+      );
     } finally {
       setBusy(false);
     }
   };
+
   return (
-    <Modal
-      title={mode === "login" ? "Connexion à votre espace cloud" : "Créer un compte cloud"}
-      subtitle="Chaque compte dispose de son propre espace de travail privé."
-      onClose={onClose}
-      footer={
-        <>
-          <Button onClick={onClose}>Annuler</Button>
-          <Button variant="primary" disabled={busy} onClick={() => void submit()}>
-            {busy ? "Connexion…" : mode === "login" ? "Se connecter" : "Créer mon compte"}
-          </Button>
-        </>
-      }
-    >
-      <div className="tabs">
-        <button
-          className={`tab ${mode === "login" ? "active" : ""}`}
-          onClick={() => {
-            setMode("login");
-            setError("");
-          }}
-        >
-          Connexion
-        </button>
-        <button
-          className={`tab ${mode === "register" ? "active" : ""}`}
-          onClick={() => {
-            setMode("register");
-            setError("");
-          }}
-        >
-          Créer un compte
-        </button>
-      </div>
-      <div className="form-grid" style={{ gridTemplateColumns: "1fr" }}>
-        <Field label="Adresse courriel">
-          <input
-            autoComplete="email"
-            className="input"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="vous@organisation.org"
-          />
-        </Field>
-        <Field
-          label="Mot de passe"
-          help={
-            mode === "register" ? "10 caractères minimum. Conservez-le en lieu sûr." : undefined
-          }
-        >
-          <input
-            autoComplete={mode === "login" ? "current-password" : "new-password"}
-            className="input"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••••"
-          />
-        </Field>
-      </div>
-      {mode === "register" && (
-        <label
-          style={{
-            display: "flex",
-            gap: 9,
-            alignItems: "flex-start",
-            fontSize: 11,
-            color: "#67756d",
-            lineHeight: 1.5,
-            marginTop: 14,
-          }}
-        >
-          <input type="checkbox" checked={merge} onChange={(e) => setMerge(e.target.checked)} />
-          Transférer les données de cet appareil dans le nouvel espace cloud. Les données seront
-          associées à ce compte.
-        </label>
-      )}
-      {error && (
-        <div className="notice error" style={{ marginTop: 14 }}>
-          {error}
+    <div className="auth-screen">
+      <aside className="auth-visual">
+        <div className="brand">
+          <div className="brand-mark">S+</div>
+          <div>
+            <div className="brand-title">Compta SYCEBNL+</div>
+            <div className="brand-sub">Gestion comptable associative</div>
+          </div>
         </div>
-      )}
-      <div className="notice" style={{ marginTop: 14 }}>
-        Le compte cloud nécessite une base PostgreSQL et un secret d’application configurés par
-        l’administrateur Vercel. En local, vos données restent dans ce navigateur.
-      </div>
-    </Modal>
+        <div className="auth-quote">
+          <h1>Une comptabilité au service de vos projets.</h1>
+          <p>Un espace privé pour vos écritures, vos projets et vos états financiers.</p>
+        </div>
+        <div className="auth-foot">Comptabilité · Projets · États financiers</div>
+      </aside>
+      <main className="auth-box-wrap">
+        <section className="auth-box" aria-labelledby="access-title">
+          <div className="brand-mark" style={{ marginBottom: 25 }}>
+            S+
+          </div>
+          <h2 id="access-title">
+            {mode === "login" ? "Connectez-vous à votre espace" : "Créez votre espace comptable"}
+          </h2>
+          <p>Connectez-vous ou créez un compte pour accéder à vos données.</p>
+          <div className="tabs" role="tablist" aria-label="Accès au compte">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === "login"}
+              className={`tab ${mode === "login" ? "active" : ""}`}
+              onClick={() => {
+                setMode("login");
+                setError("");
+              }}
+            >
+              Connexion
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === "register"}
+              className={`tab ${mode === "register" ? "active" : ""}`}
+              onClick={() => {
+                setMode("register");
+                setError("");
+              }}
+            >
+              Créer un compte
+            </button>
+          </div>
+          <form onSubmit={(event) => void submit(event)}>
+            <div className="form-grid" style={{ gridTemplateColumns: "1fr" }}>
+              <Field label="Adresse courriel">
+                <input
+                  autoComplete="email"
+                  className="input"
+                  type="email"
+                  required
+                  maxLength={254}
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="nom@organisation.org"
+                />
+              </Field>
+              <Field
+                label="Mot de passe"
+                help={mode === "register" ? "10 caractères minimum." : undefined}
+              >
+                <input
+                  autoComplete={mode === "login" ? "current-password" : "new-password"}
+                  className="input"
+                  type="password"
+                  required
+                  minLength={mode === "register" ? 10 : 1}
+                  maxLength={128}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="Saisissez votre mot de passe"
+                />
+              </Field>
+            </div>
+            {error && (
+              <div className="notice error" role="alert" style={{ marginTop: 14 }}>
+                {error}
+              </div>
+            )}
+            <Button variant="primary" disabled={busy} className="auth-submit">
+              {busy ? "Vérification…" : mode === "login" ? "Se connecter" : "Créer mon compte"}
+            </Button>
+          </form>
+          <div className="notice" style={{ marginTop: 18 }}>
+            Vous devez être connecté pour consulter votre comptabilité. Chaque compte possède son
+            propre espace privé.
+          </div>
+        </section>
+      </main>
+    </div>
   );
 }

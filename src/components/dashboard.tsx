@@ -11,7 +11,7 @@ import {
 import { Button, Empty, Panel, StatCard } from "./ui";
 import type { ViewProps } from "./shared";
 
-export function Dashboard({ workspace, year, notify }: ViewProps) {
+export function Dashboard({ workspace, year, onNewEntry }: ViewProps & { onNewEntry: () => void }) {
   const entries = yearEntries(workspace.entries, year);
   const operating = operatingStatement(workspace.accounts, entries);
   const balance = balanceReport(workspace.accounts, entries);
@@ -29,7 +29,7 @@ export function Dashboard({ workspace, year, notify }: ViewProps) {
           <p>Un regard clair sur les ressources, les projets et les écritures de l’exercice.</p>
         </div>
         <div className="actions">
-          <Button onClick={() => notify("Ouvrez le Journal pour saisir une nouvelle écriture.")}>
+          <Button onClick={onNewEntry}>
             <Plus />
             Nouvelle écriture
           </Button>
@@ -37,8 +37,8 @@ export function Dashboard({ workspace, year, notify }: ViewProps) {
       </div>
       {workspace.accounts.some((a) => a.source === "demo") && (
         <div className="notice warning" style={{ marginBottom: 16 }}>
-          <strong>Plan de démonstration.</strong> Les comptes affichés sont un jeu de départ non
-          officiel. Importez le plan SYCEBNL MAP AFRIQUE pour retrouver les 1 130 libellés attendus.
+          <strong>Comptes proposés au démarrage.</strong> Vérifiez-les et importez le référentiel
+          comptable de votre organisation avant la saisie des opérations.
         </div>
       )}
       <div className="grid stats-grid">

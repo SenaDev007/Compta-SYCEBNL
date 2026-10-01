@@ -1,52 +1,52 @@
-# Plan de réalisation — Compta SYCEBNL+
+# Plan et décisions — Compta SYCEBNL+
 
-## Objectif et décisions
+## Objectif
 
-Construire une application web de tenue comptable SYCEBNL en français, adaptée à Chrome/Edge sur PC et mobile, avec montants en FCFA sans décimales. Le dépôt GitHub fourni est initialement vide. La cible de déploiement demandée est Vercel ; le stockage persistant sera PostgreSQL compatible Neon, provisionné via l’intégration du Marketplace Vercel. Le code ne contiendra aucun secret de connexion.
+Application web de tenue comptable SYCEBNL en français, pour PC et mobile, avec montants en FCFA sans décimales. La cible de déploiement demandée est Vercel. Une base PostgreSQL compatible, provisionnée séparément, conserve les comptes et espaces comptables ; aucun secret d’accès ne doit être inclus dans le dépôt.
 
-Le modèle SYCEBNL fourni guide les calculs, mais ne constitue pas une certification de conformité. Les fichiers distincts contenant les 1 130 libellés MAP AFRIQUE et le budget GSAT n’étant pas fournis, l’application proposera leur import et des données de démonstration explicitement marquées ; elle ne fabriquera pas un plan comptable prétendument officiel.
+Le cahier des charges guide les calculs, sans constituer une certification de conformité. Les référentiels comptables et budgets propres à l’organisation doivent être fournis et vérifiés ; les données de départ sont identifiées comme exemples.
 
-La base stockera les comptes utilisateurs avec hash de mot de passe et un espace de travail JSON versionné par utilisateur. Les API liront et écriront seulement l’espace de l’utilisateur authentifié ; les sauvegardes/export locaux restent utilisables hors connexion. Un contrôle de version optimiste évite qu’une version obsolète écrase silencieusement un espace cloud plus récent.
+## Accès et confidentialité
+
+- La page de connexion ou de création de compte est le seul écran présenté avant authentification. Les données d’exemple et de compte ne sont pas exposées aux visiteurs.
+- Chaque compte dispose d’un espace isolé ; l’API contrôle la session et la cohérence des données avant de les lire ou les modifier.
+- Après connexion, une copie liée au compte peut être conservée sur l’appareil. L’enregistrement vers la base est différé et les versions concurrentes doivent être comparées avant résolution.
+- Les sauvegardes sont téléchargées au moyen d’une route protégée. La restauration valide le fichier, affiche son contenu et demande une confirmation avant remplacement.
+- Les téléchargements de PDF, classeurs et sauvegardes sont générés côté serveur après validation de la session et des données.
 
 ## Direction artistique
 
 - **Mouvement** : institutionnel contemporain, inspiré des registres comptables imprimés et des outils de gestion des organisations à impact.
 - **Principes** : précision lisible ; confiance sans austérité ; densité maîtrisée des tableaux ; hiérarchie claire entre décisions et chiffres.
-- **Philosophie couleur** : vert forêt profond pour la confiance et la stabilité, ivoire papier pour la lecture prolongée, cuivre discret pour les repères importants, ardoise pour les données secondaires.
-- **Paradigme de mise en page** : navigation latérale persistante sur grand écran, barre compacte sur mobile, vues de travail à dominante tableau et fiches de synthèse en tête, sans écran d’accueil générique.
-- **Signatures** : monogramme « S+ » construit comme deux colonnes de journal ; fines lignes de registre ; repères de projet colorés par code.
-- **Interaction** : saisie directe et contextualisée, calculs visibles, validation avant écriture, confirmation explicite en deux étapes avant suppression/restauration.
-- **Animation** : transitions courtes (140–200 ms), uniquement sur panneau/état ; aucun mouvement décoratif dans les tableaux ; respect de `prefers-reduced-motion`.
-- **Typographie** : Inter pour l’interface, `ui-monospace` pour les numéros de compte et montants ; titres 24–30 px, libellés 12–14 px, chiffres tabulaires.
-- **Essence de marque** : « La comptabilité SYCEBNL claire et pilotée par projet pour les associations et ONG. » Personnalité : rigoureuse, accessible, engagée.
-- **Voix** : claire et opérationnelle. Exemples : « Vos écritures, équilibrées avant enregistrement. » « Chaque franc rattaché à son projet. »
-- **Logo** : sceau géométrique composé de deux colonnes verticales en forme de S et d’un signe +, accompagné du nom « Compta SYCEBNL+ ».
-- **Couleur signature** : vert registre `#176B52`, avec fond ivoire `#F5F6F2`, texte encre `#142522` et accent cuivre `#B9823B`.
+- **Palette** : vert forêt profond pour la stabilité, ivoire papier pour la lecture prolongée, cuivre discret pour les repères importants, ardoise pour les données secondaires.
+- **Mise en page** : navigation persistante sur grand écran, barre compacte sur mobile, tableaux et fiches de synthèse clairs.
+- **Signatures** : monogramme « S+ », fines lignes de registre, repères de projet colorés.
+- **Interaction** : saisie contextualisée, contrôles visibles et confirmation avant suppression ou restauration.
+- **Typographie** : Inter pour l’interface, chiffres tabulaires pour les montants et numéros de compte.
+- **Voix** : claire, opérationnelle et limitée au vocabulaire comptable.
 
-## Architecture technique
+## Architecture
 
-- Next.js App Router, TypeScript strict, interface responsive, composants réutilisables.
-- PostgreSQL via Neon/Vercel Marketplace et pilote serverless ; API Node pour inscription, connexion, synchronisation cloud et état de santé.
-- Authentification email/mot de passe, hash bcrypt, cookie de session HTTP-only signé ; espaces strictement isolés par utilisateur.
-- Sauvegarde locale automatique, synchronisation cloud temporisée, détection de conflit, sauvegarde/restauration JSON.
-- Modules comptables calculant localement les états à partir du journal ; les écritures déséquilibrées, comptes inexistants ou lignes budgétaires étrangères au projet sont refusés.
-- Le compte d’exploitation suit l’hypothèse du document : charges classe 6 et classe 8 à deuxième chiffre impair ; produits classe 7 et classe 8 à deuxième chiffre pair. Ces hypothèses restent signalées comme à valider.
-
-## Structure prévue
-
-- `src/app/` : page principale et API auth, santé et espace cloud.
-- `src/components/` : navigation, formulaires, tableaux et indicateurs.
-- `src/lib/accounting/` : modèles, calculs et validation comptable.
-- `src/lib/auth/` : sessions, mots de passe et contrôle d’accès.
-- `src/lib/db/` : accès PostgreSQL, initialisation/migration.
-- `public/manus-routes.json` : manifeste complet des routes applicatives.
-- `scripts/` : migration et chargement optionnel des exemples.
-- `.env.example`, `README.md`, `PLAN.md` : configuration locale et déploiement Vercel.
+- Next.js App Router et TypeScript strict.
+- Interface française, responsive, avec navigation par modules.
+- PostgreSQL compatible Neon, client adapté aux routes serverless de Vercel ; migration idempotente des tables de comptes et d’espaces.
+- Authentification courriel/mot de passe, mot de passe haché et cookie de session HTTP-only signé.
+- Routes privées pour l’espace, les exports, les sauvegardes et la restauration ; vérification d’origine pour les modifications.
+- Modules comptables : contrôles en partie double, référence aux comptes et projets existants, calcul des états, budgets et rapprochements.
+- Production des PDF et classeurs sur le serveur, avec présentation professionnelle.
 
 ## Modules fonctionnels
 
-Tableau de bord ; plan comptable importable/recherchable/ajoutable ; journal AC, VE, BQ, CA, OD en partie double ; projets ; budgets Outcome/Output/activité/ligne avec partage bailleur/porteur calculé ; grand livre ; balance ; compte d’exploitation ; emplois-ressources simplifié ; suivi budgétaire ; rapprochement bancaire ; rapport financier narratif en cinq parties ; exports CSV/XLSX et PDF par impression ; sauvegarde/restauration JSON.
+Tableau de bord ; plan comptable (lecture, création, modification, import, suppression protégée) ; journal en partie double (lecture, création, modification, suppression) ; projets et budgets (création, édition, lignes hiérarchiques et import) ; grand livre ; balance ; compte d’exploitation ; emplois-ressources simplifié ; suivi budgétaire ; rapprochement bancaire (création, pointage, mise à jour, suppression) ; rapport narratif en cinq parties ; sauvegarde, restauration confirmée et téléchargements PDF/classeur.
 
-## Limites documentées
+Les intitulés visibles de la hiérarchie budgétaire sont Section, Résultat, Produit, Activité et Dépense. Les formats historiques anglais sont reconnus par l’import, sans être présentés comme libellés à l’écran.
 
-Le plan intégral et le budget GSAT exacts sont absents des pièces disponibles ; ils ne seront donc pas simulés. Les fonctions hors périmètre initial (bilan complet, annexes OHADA détaillées, import bancaire CSV automatique avancé, export DOCX, clôture et piste d’audit) seront signalées comme extensions. Le provisionnement de Neon/Vercel et un déploiement public nécessitent l’accès au compte Vercel de l’utilisateur ; cette livraison prépare les fichiers et les commandes mais ne crée pas de ressource distante sans cet accès.
+## Vérifications et mise en service
+
+Le dépôt fournit les commandes `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm format:check` et `pnpm build`. Les essais automatisés couvrent les calculs, imports Excel/CSV, restauration, génération PDF/classeur et contrôles de données.
+
+L’application n’est pas encore reliée au compte Vercel de l’utilisateur ni à sa base de production. L’ajout des variables de déploiement, l’exécution de la migration, puis un essai réel de création et connexion nécessitent cet accès. Le contrôle local ne remplace pas cet essai en environnement réel.
+
+## Limites
+
+Le bilan complet, les annexes OHADA détaillées, la clôture/report à nouveau, l’import bancaire automatique, l’audit des modifications, le verrouillage de période et le travail partagé à plusieurs avec rôles ne sont pas inclus. Les hypothèses relatives aux comptes 701 et 842, au classement des comptes 8 et au tableau emplois-ressources doivent être confirmées par un professionnel compétent.
