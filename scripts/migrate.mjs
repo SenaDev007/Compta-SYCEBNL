@@ -1,7 +1,7 @@
 import { neon } from "@neondatabase/serverless";
-import { loadEnvConfig } from "@next/env";
+import nextEnv from "@next/env";
 
-loadEnvConfig(process.cwd());
+nextEnv.loadEnvConfig(process.cwd());
 
 const url = process.env.DATABASE_URL;
 if (!url) {
