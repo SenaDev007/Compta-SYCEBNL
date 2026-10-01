@@ -1,5 +1,5 @@
 "use client";
-import type { ReactNode } from "react";
+import { cloneElement, isValidElement, useId, type ReactNode } from "react";
 import { X } from "lucide-react";
 
 export function Button({
@@ -120,10 +120,14 @@ export function Field({
   help?: string;
   children: ReactNode;
 }) {
+  const generatedId = useId();
+  const controlElement = isValidElement<{ id?: string }>(children) ? children : null;
+  const controlId = controlElement?.props.id ?? generatedId;
+  const control = controlElement ? cloneElement(controlElement, { id: controlId }) : children;
   return (
     <div className="field">
-      <label>{label}</label>
-      {children}
+      <label htmlFor={controlId}>{label}</label>
+      {control}
       {help && <small>{help}</small>}
     </div>
   );

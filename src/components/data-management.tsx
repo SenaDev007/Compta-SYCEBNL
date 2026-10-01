@@ -14,14 +14,20 @@ export function DataManagementView({
   setWorkspace,
   cloudUser,
   cloudStatus,
+  offlineReady,
+  offlineMode,
   onLogout,
+  onRetry,
   notify,
 }: {
   workspace: Workspace;
   setWorkspace: WorkspaceSetter;
   cloudUser: CloudUser;
   cloudStatus: string;
+  offlineReady: boolean;
+  offlineMode: boolean;
   onLogout: () => void;
+  onRetry: () => void;
   notify: (message: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -65,8 +71,12 @@ export function DataManagementView({
     if (downloading) return;
     setDownloading(true);
     try {
-      await downloadBackup(workspace);
-      notify("Votre sauvegarde a été téléchargée.");
+      const source = await downloadBackup(workspace);
+      notify(
+        source === "device"
+          ? "Votre sauvegarde a été créée sur cet appareil."
+          : "Votre sauvegarde a été téléchargée.",
+      );
     } catch (cause) {
       notify(cause instanceof Error ? cause.message : "Le téléchargement a échoué.");
     } finally {
@@ -87,26 +97,43 @@ export function DataManagementView({
         <div className="data-card">
           <h3>
             <HardDrive size={15} style={{ verticalAlign: "-3px", marginRight: 6 }} />
-            Copie sur cet appareil
+            Accès hors connexion
           </h3>
           <p>
-            Une copie de votre espace est conservée sur cet appareil lorsque vous êtes connecté.
+            {offlineReady
+              ? "Une copie protégée de votre espace est disponible sur cet appareil. Vous pouvez vous reconnecter et poursuivre votre travail hors connexion."
+              : "Connectez-vous avec une connexion Internet pour préparer votre accès hors connexion sur cet appareil."}
           </p>
-          <span className="pill green">Disponible</span>
+          <span className={`pill ${offlineReady ? "green" : "amber"}`}>
+            {offlineReady
+              ? offlineMode
+                ? "Disponible hors connexion"
+                : "Prête sur cet appareil"
+              : "À préparer"}
+          </span>
         </div>
         <div className="data-card">
           <h3>Votre espace privé</h3>
           <p>
             Connecté comme <strong>{cloudUser.email}</strong>. Les modifications sont enregistrées
-            automatiquement.
+            automatiquement et transmises au retour de la connexion.
           </p>
           <div className="actions">
-            <span className={`pill ${cloudStatus.includes("vérifier") ? "amber" : "green"}`}>
+            <span
+              className={`pill ${
+                offlineMode ||
+                cloudStatus.includes("rétablir") ||
+                cloudStatus.includes("comparer") ||
+                cloudStatus.includes("Enregistrement")
+                  ? "amber"
+                  : "green"
+              }`}
+            >
               {cloudStatus}
             </span>
-            {cloudStatus.includes("vérifier") && (
-              <Button size="small" onClick={() => window.location.reload()}>
-                Réessayer
+            {(cloudStatus.includes("rétablir") || offlineMode) && (
+              <Button size="small" onClick={onRetry}>
+                Rétablir la connexion
               </Button>
             )}
             <Button size="small" onClick={onLogout}>

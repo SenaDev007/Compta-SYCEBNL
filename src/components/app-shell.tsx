@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeftRight,
   BarChart3,
@@ -11,13 +11,23 @@ import {
   LayoutDashboard,
   LogOut,
   ScrollText,
+  WifiOff,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { createEmptyWorkspace, type Workspace } from "@/lib/accounting/types";
 import { validateWorkspace } from "@/lib/accounting/validation";
+import {
+  createOfflineCipher,
+  hasOfflineAccount,
+  openOfflineAccount,
+  saveOfflineWorkspace,
+  type OfflineCipher,
+  type OfflineLoginResult,
+} from "@/lib/offline-vault";
 import type { WorkspaceSetter } from "./shared";
 import { AccountsView } from "./accounts";
 import { CloudAccessPage, type CloudUser } from "./cloud-access";
+import { BrandMark } from "./brand-mark";
 import { Dashboard } from "./dashboard";
 import { DataManagementView } from "./data-management";
 import { JournalView } from "./journal";
@@ -48,47 +58,66 @@ const navItems: { id: string; label: string; icon: LucideIcon; section: string }
   { id: "data", label: "Données & sauvegardes", icon: Database, section: "PARAMÈTRES" },
 ];
 
-type SyncState = "loading" | "saving" | "synced" | "error" | "conflict";
-const userKey = (id: string) => `compta-sycebnl.workspace.${id}`;
+type SyncState = "saving" | "synced" | "offline" | "error" | "conflict";
+type RemoteWorkspace = { version: number; state: Workspace; updatedAt?: string };
+type OfflineAccount = Extract<OfflineLoginResult, { status: "ok" }>;
 
-function parseStoredWorkspace(raw: string | null): Workspace | null {
-  if (!raw) return null;
+const legacyUserKey = (id: string) => `compta-sycebnl.workspace.${id}`;
+
+function readLegacyWorkspace(userId: string): Workspace | null {
   try {
+    const raw = window.localStorage.getItem(legacyUserKey(userId));
+    if (!raw) return null;
     const checked = validateWorkspace(JSON.parse(raw));
-    if (checked.success) return checked.data;
+    return checked.success ? checked.data : null;
   } catch {
     return null;
   }
-  return null;
 }
 
-function readLocalWorkspace(key: string): Workspace | null {
+function clearLegacyWorkspace(userId: string) {
   try {
-    return parseStoredWorkspace(localStorage.getItem(key));
+    window.localStorage.removeItem(legacyUserKey(userId));
   } catch {
-    return null;
+    // L’ancienne copie pourra être retirée lors d’une connexion ultérieure.
   }
+}
+
+function checkedRemote(value: unknown): RemoteWorkspace {
+  const remote = value as RemoteWorkspace;
+  if (!Number.isSafeInteger(remote?.version) || remote.version < 0) {
+    throw new Error("remote_workspace_invalid");
+  }
+  const checked = validateWorkspace(remote.state);
+  if (!checked.success) throw new Error("remote_workspace_invalid");
+  return { version: remote.version, state: checked.data, updatedAt: remote.updatedAt };
 }
 
 export function AppShell() {
   const [workspace, setRawWorkspace] = useState<Workspace>(() => createEmptyWorkspace());
-  const [currentKey, setCurrentKey] = useState("");
-  const [ready, setReady] = useState(false);
   const [active, setActive] = useState("dashboard");
   const [year, setYear] = useState(new Date().getFullYear());
   const [toast, setToast] = useState("");
   const [cloudUser, setCloudUser] = useState<CloudUser | null>(null);
-  const [syncState, setSyncState] = useState<SyncState>("loading");
+  const [syncState, setSyncState] = useState<SyncState>("synced");
+  const [offlineMode, setOfflineMode] = useState(false);
+  const [offlineReady, setOfflineReady] = useState(false);
+  const [retryToken, setRetryToken] = useState(0);
   const versionRef = useRef<number | null>(null);
   const lastSyncRef = useRef("");
   const syncInProgressRef = useRef(false);
+  const offlineCipherRef = useRef<OfflineCipher | null>(null);
+  const offlinePasswordRef = useRef("");
+  const dirtyRef = useRef(false);
+  const requiresConflictRef = useRef(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const storageWarningShown = useRef(false);
+  const persistentStorageRequested = useRef(false);
 
   const notify = useCallback((message: string) => {
     setToast(message);
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(""), 3600);
+    toastTimer.current = setTimeout(() => setToast(""), 4200);
   }, []);
 
   const setWorkspace: WorkspaceSetter = useCallback(
@@ -101,118 +130,294 @@ export function AppShell() {
     [],
   );
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const initialize = async () => {
-      let chosen = createEmptyWorkspace();
-      let user: CloudUser | null = null;
-      let key = "";
-      let cloudVersion: number | null = null;
-      let nextSyncState: SyncState = "error";
-      let syncedSnapshot = "";
-
+  const saveSnapshot = useCallback(
+    async (
+      user: CloudUser,
+      snapshot: Workspace,
+      version: number,
+      dirty: boolean,
+      cipher: OfflineCipher,
+      requiresConflict = false,
+    ) => {
       try {
-        const response = await fetch("/api/auth/me", {
-          credentials: "include",
-          cache: "no-store",
-        });
-        if (!response.ok) throw new Error("Session indisponible");
-        const data = await response.json();
-        if (!data.user) {
-          if (!cancelled) {
-            setCurrentKey("");
-            setRawWorkspace(createEmptyWorkspace());
-            setCloudUser(null);
-            setSyncState("error");
-            setReady(true);
-          }
-          return;
+        await saveOfflineWorkspace(user, snapshot, version, dirty, cipher, requiresConflict);
+        setOfflineReady(true);
+        storageWarningShown.current = false;
+        if (!persistentStorageRequested.current && navigator.storage?.persist) {
+          persistentStorageRequested.current = true;
+          void navigator.storage.persist().catch(() => false);
         }
-
-        user = data.user as CloudUser;
-        key = userKey(user.id);
-        const userLocal = readLocalWorkspace(key);
-        if (userLocal) chosen = userLocal;
-
-        const remoteResponse = await fetch("/api/workspace", {
-          credentials: "include",
-          cache: "no-store",
-        });
-        if (!remoteResponse.ok) throw new Error("Espace indisponible");
-        const remote = (await remoteResponse.json()) as {
-          version: number;
-          state: Workspace;
-          updatedAt: string;
-        };
-        const checkedRemote = validateWorkspace(remote.state);
-        if (!checkedRemote.success) throw new Error("Espace à vérifier");
-        cloudVersion = remote.version;
-        const remoteDate = Date.parse(checkedRemote.data.updatedAt || remote.updatedAt || "");
-        const localDate = Date.parse(userLocal?.updatedAt || "");
-
-        if (userLocal && Number.isFinite(localDate) && localDate > remoteDate) {
-          chosen = userLocal;
-          nextSyncState = "conflict";
-          syncedSnapshot = JSON.stringify(checkedRemote.data);
-        } else {
-          chosen = checkedRemote.data;
-          nextSyncState = "synced";
-          syncedSnapshot = JSON.stringify(chosen);
-        }
+        return true;
       } catch {
-        nextSyncState = "error";
+        setOfflineReady(false);
+        if (!storageWarningShown.current) {
+          storageWarningShown.current = true;
+          notify("La copie hors connexion n’a pas pu être actualisée sur cet appareil.");
+        }
+        return false;
+      }
+    },
+    [notify],
+  );
+
+  const connectCloud = useCallback(
+    async (user: CloudUser, password: string) => {
+      const response = await fetch("/api/workspace", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error("workspace_unavailable");
+      const remote = checkedRemote(await response.json());
+      const remoteSnapshot = JSON.stringify(remote.state);
+
+      const cached = await openOfflineAccount(user.email, password);
+      if (cached.status === "invalid" && (await hasOfflineAccount(user.email))) {
+        // A changed password must never silently replace an older encrypted copy.
+        offlineCipherRef.current = null;
+        offlinePasswordRef.current = "";
+        dirtyRef.current = false;
+        requiresConflictRef.current = false;
+        versionRef.current = remote.version;
+        lastSyncRef.current = remoteSnapshot;
+        setRawWorkspace(remote.state);
+        setCloudUser(user);
+        setOfflineMode(false);
+        setOfflineReady(false);
+        setSyncState("synced");
+        setActive("dashboard");
+        notify(
+          "Le mot de passe de votre compte a changé depuis la dernière copie de cet appareil. Cette copie n’a pas été remplacée.",
+        );
+        return;
       }
 
-      if (cancelled) return;
-      setCurrentKey(key);
+      let cipher: OfflineCipher | null = cached.status === "ok" ? cached.cipher : null;
+      if (!cipher) {
+        try {
+          cipher = await createOfflineCipher(password);
+        } catch {
+          cipher = null;
+        }
+      }
+
+      let chosen = remote.state;
+      let localDirty = false;
+      let localVersion = remote.version;
+      let conflict = false;
+      if (cached.status === "ok" && cached.dirty) {
+        chosen = cached.workspace;
+        localDirty = true;
+        localVersion = cached.version;
+        conflict = cached.requiresConflict || cached.version !== remote.version;
+      } else if (cached.status !== "ok") {
+        const legacy = readLegacyWorkspace(user.id);
+        const legacyDate = Date.parse(legacy?.updatedAt || "");
+        const remoteDate = Date.parse(remote.state.updatedAt || remote.updatedAt || "");
+        if (legacy && Number.isFinite(legacyDate) && legacyDate > remoteDate) {
+          chosen = legacy;
+          localDirty = true;
+          conflict = true;
+        }
+      }
+
+      offlineCipherRef.current = cipher;
+      offlinePasswordRef.current = "";
+      dirtyRef.current = localDirty;
+      requiresConflictRef.current = conflict;
+      versionRef.current = conflict ? localVersion : remote.version;
+      lastSyncRef.current = remoteSnapshot;
       setRawWorkspace(chosen);
       setCloudUser(user);
-      versionRef.current = cloudVersion;
-      lastSyncRef.current = syncedSnapshot;
-      setSyncState(nextSyncState);
-      setReady(true);
-    };
+      setOfflineMode(false);
+      setOfflineReady(Boolean(cipher && cached.status === "ok"));
+      setSyncState(conflict ? "conflict" : localDirty ? "saving" : "synced");
+      setActive("dashboard");
 
-    void initialize();
-    return () => {
-      cancelled = true;
-    };
+      if (cipher) {
+        const stored = await saveSnapshot(
+          user,
+          chosen,
+          versionRef.current ?? remote.version,
+          localDirty,
+          cipher,
+          conflict,
+        );
+        if (stored && cached.status !== "ok") {
+          clearLegacyWorkspace(user.id);
+          notify("Votre accès hors connexion est prêt sur cet appareil.");
+        }
+      } else {
+        notify(
+          "Votre espace est ouvert. La copie hors connexion n’est pas disponible sur cet appareil.",
+        );
+      }
+    },
+    [notify, saveSnapshot],
+  );
+
+  const enterOffline = useCallback((account: OfflineAccount, password: string) => {
+    offlineCipherRef.current = account.cipher;
+    offlinePasswordRef.current = password;
+    dirtyRef.current = account.dirty;
+    requiresConflictRef.current = account.requiresConflict;
+    versionRef.current = account.version;
+    lastSyncRef.current = account.dirty ? "" : JSON.stringify(account.workspace);
+    setRawWorkspace(account.workspace);
+    setCloudUser(account.user);
+    setOfflineMode(true);
+    setOfflineReady(true);
+    setSyncState("offline");
+    setActive("dashboard");
+  }, []);
+
+  const resumeConnection = useCallback(async () => {
+    if (!cloudUser || syncInProgressRef.current || !navigator.onLine) return;
+    syncInProgressRef.current = true;
+    try {
+      const savedPassword = offlinePasswordRef.current;
+      if (savedPassword) {
+        const login = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          cache: "no-store",
+          body: JSON.stringify({ email: cloudUser.email, password: savedPassword }),
+        });
+        if (!login.ok) {
+          offlinePasswordRef.current = "";
+          setSyncState("error");
+          notify(
+            "Votre espace reste accessible ici, mais la connexion au compte doit être rétablie. Déconnectez-vous puis reconnectez-vous.",
+          );
+          return;
+        }
+        offlinePasswordRef.current = "";
+      }
+
+      const response = await fetch("/api/workspace", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error("workspace_unavailable");
+      const remote = checkedRemote(await response.json());
+      const remoteSnapshot = JSON.stringify(remote.state);
+
+      if (
+        dirtyRef.current &&
+        (requiresConflictRef.current || remote.version !== versionRef.current)
+      ) {
+        lastSyncRef.current = remoteSnapshot;
+        requiresConflictRef.current = true;
+        setOfflineMode(false);
+        setSyncState("conflict");
+        const cipher = offlineCipherRef.current;
+        if (cipher) {
+          await saveSnapshot(
+            cloudUser,
+            workspace,
+            versionRef.current ?? remote.version,
+            true,
+            cipher,
+            true,
+          );
+        }
+        return;
+      }
+
+      setOfflineMode(false);
+      if (dirtyRef.current) {
+        versionRef.current = remote.version;
+        lastSyncRef.current = remoteSnapshot;
+        requiresConflictRef.current = false;
+        setSyncState("saving");
+      } else {
+        versionRef.current = remote.version;
+        lastSyncRef.current = remoteSnapshot;
+        setRawWorkspace(remote.state);
+        setSyncState("synced");
+        const cipher = offlineCipherRef.current;
+        if (cipher)
+          await saveSnapshot(cloudUser, remote.state, remote.version, false, cipher, false);
+      }
+    } catch {
+      if (offlineCipherRef.current) {
+        setOfflineMode(true);
+        setSyncState("offline");
+      } else {
+        setSyncState("error");
+      }
+    } finally {
+      syncInProgressRef.current = false;
+      setRetryToken((value) => value + 1);
+    }
+  }, [cloudUser, workspace, saveSnapshot, notify]);
+
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      void navigator.serviceWorker
+        .register("/sw.js", { scope: "/" })
+        .then(() => navigator.serviceWorker.ready)
+        .then(() => (navigator.onLine ? import("xlsx-js-style") : undefined))
+        .catch(() => undefined);
+    }
   }, []);
 
   useEffect(() => {
-    if (!ready || !cloudUser || !currentKey) return;
-    try {
-      localStorage.setItem(currentKey, JSON.stringify(workspace));
-      storageWarningShown.current = false;
-    } catch {
-      if (!storageWarningShown.current) {
-        storageWarningShown.current = true;
-        window.setTimeout(
-          () =>
-            notify(
-              "L’espace disponible sur cet appareil est insuffisant. Téléchargez une sauvegarde.",
-            ),
-          0,
-        );
+    const onOffline = () => {
+      if (!cloudUser) return;
+      if (offlineCipherRef.current) {
+        setOfflineMode(true);
+        setSyncState("offline");
+      } else {
+        setSyncState("error");
+        notify("La copie hors connexion n’est pas prête sur cet appareil.");
       }
-    }
-  }, [workspace, currentKey, ready, cloudUser, notify]);
+    };
+    const onOnline = () => {
+      if (cloudUser && offlineMode) void resumeConnection();
+    };
+    const onVisible = () => {
+      if (!document.hidden && navigator.onLine && cloudUser && offlineMode) {
+        void resumeConnection();
+      }
+    };
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [cloudUser, offlineMode, resumeConnection, notify]);
 
   useEffect(() => {
-    if (
-      !ready ||
-      !cloudUser ||
-      syncState === "conflict" ||
-      syncState === "error" ||
-      syncInProgressRef.current
-    ) {
+    if (!cloudUser || !offlineMode || !navigator.onLine) return;
+    const timer = window.setTimeout(() => void resumeConnection(), 0);
+    return () => window.clearTimeout(timer);
+  }, [cloudUser, offlineMode, resumeConnection]);
+
+  useEffect(() => {
+    if (!cloudUser) return;
+    const serialized = JSON.stringify(workspace);
+    const dirty = dirtyRef.current || serialized !== lastSyncRef.current;
+    dirtyRef.current = dirty;
+    const cipher = offlineCipherRef.current;
+    const version = versionRef.current ?? 0;
+    if (cipher) {
+      void saveSnapshot(cloudUser, workspace, version, dirty, cipher, requiresConflictRef.current);
+    }
+
+    if (offlineMode || !navigator.onLine) {
+      setSyncState("offline");
       return;
     }
-    const serialized = JSON.stringify(workspace);
-    if (serialized === lastSyncRef.current) return;
+    if (syncState === "conflict" || syncState === "error" || syncInProgressRef.current || !dirty) {
+      return;
+    }
 
-    const timer = setTimeout(async () => {
+    const timer = window.setTimeout(async () => {
+      if (syncInProgressRef.current) return;
       syncInProgressRef.current = true;
       setSyncState("saving");
       try {
@@ -220,138 +425,144 @@ export function AppShell() {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
+          cache: "no-store",
           body: JSON.stringify({ version: versionRef.current, state: workspace }),
         });
         if (response.status === 409) {
+          dirtyRef.current = true;
+          requiresConflictRef.current = true;
           setSyncState("conflict");
+          if (cipher) {
+            await saveSnapshot(cloudUser, workspace, version, true, cipher, true);
+          }
           return;
         }
-        if (!response.ok) throw new Error("Échec de l’enregistrement");
-        const result = await response.json();
+        if (!response.ok) throw new Error("workspace_save_failed");
+        const result = (await response.json()) as { version: number };
         versionRef.current = result.version;
         lastSyncRef.current = serialized;
+        dirtyRef.current = false;
+        requiresConflictRef.current = false;
         setSyncState("synced");
+        if (cipher) {
+          await saveSnapshot(cloudUser, workspace, result.version, false, cipher, false);
+        }
       } catch {
-        setSyncState("error");
+        if (!navigator.onLine && cipher) {
+          setOfflineMode(true);
+          setSyncState("offline");
+        } else {
+          setSyncState("error");
+        }
       } finally {
         syncInProgressRef.current = false;
       }
-    }, 1500);
+    }, 900);
 
-    return () => clearTimeout(timer);
-  }, [workspace, ready, cloudUser, syncState]);
+    return () => window.clearTimeout(timer);
+  }, [workspace, cloudUser, offlineMode, syncState, retryToken, saveSnapshot]);
 
-  const connectCloud = async (user: CloudUser) => {
-    try {
-      const response = await fetch("/api/workspace", {
-        credentials: "include",
-        cache: "no-store",
-      });
-      if (!response.ok) {
-        throw new Error("Impossible de charger votre espace.");
-      }
-      const remote = (await response.json()) as { version: number; state: Workspace };
-      const checkedRemote = validateWorkspace(remote.state);
-      if (!checkedRemote.success) throw new Error("Votre espace doit être vérifié.");
-      const key = userKey(user.id);
-      const cached = readLocalWorkspace(key);
-      let chosen = checkedRemote.data;
-      const version = remote.version;
-      const localDate = Date.parse(cached?.updatedAt || "");
-      const remoteDate = Date.parse(checkedRemote.data.updatedAt || "");
-      const hasNewerLocal = Boolean(cached && Number.isFinite(localDate) && localDate > remoteDate);
-      if (hasNewerLocal && cached) chosen = cached;
-
-      setCurrentKey(key);
-      setRawWorkspace(chosen);
-      setCloudUser(user);
-      versionRef.current = version;
-      lastSyncRef.current = JSON.stringify(hasNewerLocal ? checkedRemote.data : chosen);
-      setSyncState(hasNewerLocal ? "conflict" : "synced");
-      setReady(true);
-    } catch {
-      try {
-        await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
-      } catch {
-        // Le prochain contrôle de session gardera les données masquées.
-      }
-      throw new Error("Votre espace n’a pas pu être ouvert. Réessayez dans quelques instants.");
+  const logout = useCallback(async () => {
+    const user = cloudUser;
+    const cipher = offlineCipherRef.current;
+    if (user && cipher) {
+      const serialized = JSON.stringify(workspace);
+      const dirty = dirtyRef.current || serialized !== lastSyncRef.current;
+      await saveSnapshot(
+        user,
+        workspace,
+        versionRef.current ?? 0,
+        dirty,
+        cipher,
+        requiresConflictRef.current,
+      );
     }
-  };
-
-  const logout = async () => {
-    try {
-      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
-    } catch {
-      // L’écran d’accès masque les données même si la fermeture de session échoue.
+    if (navigator.onLine) {
+      void fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(
+        () => undefined,
+      );
     }
     setCloudUser(null);
-    setCurrentKey("");
+    setRawWorkspace(createEmptyWorkspace());
+    setOfflineMode(false);
+    setSyncState("synced");
+    setActive("dashboard");
     versionRef.current = null;
     lastSyncRef.current = "";
-    setRawWorkspace(createEmptyWorkspace());
-    setSyncState("error");
-    setReady(true);
-    setActive("dashboard");
-  };
+    dirtyRef.current = false;
+    requiresConflictRef.current = false;
+    offlinePasswordRef.current = "";
+    offlineCipherRef.current = null;
+    syncInProgressRef.current = false;
+  }, [cloudUser, workspace, saveSnapshot]);
 
-  const resolveConflict = async (choice: "remote" | "local") => {
-    try {
-      const remoteResponse = await fetch("/api/workspace", {
-        credentials: "include",
-        cache: "no-store",
-      });
-      if (!remoteResponse.ok) throw new Error("Impossible de charger l’autre version.");
-      const remote = (await remoteResponse.json()) as { version: number; state: Workspace };
-
-      if (choice === "remote") {
-        setRawWorkspace(remote.state);
-        versionRef.current = remote.version;
-        lastSyncRef.current = JSON.stringify(remote.state);
-        setSyncState("synced");
-      } else {
-        const save = await fetch("/api/workspace", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ version: remote.version, state: workspace }),
-        });
-        if (!save.ok) throw new Error("Cette version n’a pas pu être conservée.");
-        const result = await save.json();
-        versionRef.current = result.version;
-        lastSyncRef.current = JSON.stringify(workspace);
-        setSyncState("synced");
+  const resolveConflict = useCallback(
+    async (choice: "remote" | "local") => {
+      if (!cloudUser || !navigator.onLine) {
+        notify("Rétablissez votre connexion avant de comparer les deux versions.");
+        return;
       }
-      notify(
-        choice === "remote"
-          ? "L’autre version a été chargée."
-          : "Cette version a été conservée et enregistrée.",
-      );
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "Conflit non résolu.");
-    }
-  };
+      try {
+        const remoteResponse = await fetch("/api/workspace", {
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (!remoteResponse.ok) throw new Error("workspace_unavailable");
+        const remote = checkedRemote(await remoteResponse.json());
+        const remoteSnapshot = JSON.stringify(remote.state);
+        const cipher = offlineCipherRef.current;
+        requiresConflictRef.current = false;
+        if (choice === "remote") {
+          setRawWorkspace(remote.state);
+          versionRef.current = remote.version;
+          lastSyncRef.current = remoteSnapshot;
+          dirtyRef.current = false;
+          setSyncState("synced");
+          if (cipher)
+            await saveSnapshot(cloudUser, remote.state, remote.version, false, cipher, false);
+          notify("La version du compte a été chargée.");
+        } else {
+          versionRef.current = remote.version;
+          lastSyncRef.current = remoteSnapshot;
+          dirtyRef.current = true;
+          setSyncState("saving");
+          if (cipher) {
+            await saveSnapshot(cloudUser, workspace, remote.version, true, cipher, false);
+          }
+          setRetryToken((value) => value + 1);
+          notify("Votre version est prête à être enregistrée.");
+        }
+      } catch {
+        notify("Les versions n’ont pas pu être comparées. Réessayez dans quelques instants.");
+      }
+    },
+    [cloudUser, workspace, notify, saveSnapshot],
+  );
+
+  if (!cloudUser) {
+    return <CloudAccessPage onSuccess={connectCloud} onOfflineSuccess={enterOffline} />;
+  }
 
   const title =
     active === "new-entry"
       ? "Journal des écritures"
       : navItems.find((item) => item.id === active)?.label || "Tableau de bord";
   const syncLabels: Record<SyncState, string> = {
-    loading: "Vérification…",
     saving: "Enregistrement…",
-    synced: "Tout est à jour",
-    error: "Enregistrement à vérifier",
+    synced: "À jour",
+    offline: "Hors connexion",
+    error: "Connexion à rétablir",
     conflict: "Versions à comparer",
   };
   const statusClass =
     syncState === "error" || syncState === "conflict"
       ? "error"
-      : syncState === "saving" || syncState === "loading"
+      : syncState === "saving" || syncState === "offline"
         ? "warning"
         : "";
   const viewProps = { workspace, setWorkspace, year, notify };
 
-  let content;
+  let content: ReactNode;
   switch (active) {
     case "journal":
       content = <JournalView {...viewProps} />;
@@ -379,9 +590,16 @@ export function AppShell() {
         <DataManagementView
           workspace={workspace}
           setWorkspace={setWorkspace}
-          cloudUser={cloudUser!}
+          cloudUser={cloudUser}
           cloudStatus={syncLabels[syncState]}
+          offlineReady={offlineReady}
+          offlineMode={offlineMode}
           onLogout={() => void logout()}
+          onRetry={() => {
+            setSyncState("saving");
+            setRetryToken((value) => value + 1);
+            void resumeConnection();
+          }}
           notify={notify}
         />
       );
@@ -391,46 +609,12 @@ export function AppShell() {
   }
 
   const mobileItems = ["dashboard", "journal", "projects", "reports", "data"];
-  if (!ready) {
-    return (
-      <div className="auth-screen">
-        <div className="auth-visual">
-          <div className="brand">
-            <div className="brand-mark">S+</div>
-            <div>
-              <div className="brand-title">Compta SYCEBNL+</div>
-              <div className="brand-sub">Gestion comptable associative</div>
-            </div>
-          </div>
-          <div className="auth-quote">
-            <h1>Une comptabilité au service de vos projets.</h1>
-            <p>Préparation de l’accès à votre espace.</p>
-          </div>
-          <div className="auth-foot">Référentiel OHADA · SYCEBNL</div>
-        </div>
-        <div className="auth-box-wrap">
-          <div className="auth-box">
-            <div className="brand-mark" style={{ marginBottom: 25 }}>
-              S+
-            </div>
-            <h2>Préparation de votre espace</h2>
-            <p>Nous préparons votre accès sécurisé.</p>
-            <div className="progress">
-              <span style={{ width: "65%" }} />
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!cloudUser) return <CloudAccessPage onSuccess={connectCloud} />;
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">S+</div>
+          <BrandMark size={39} />
           <div>
             <div className="brand-title">Compta SYCEBNL+</div>
             <div className="brand-sub">Gestion comptable</div>
@@ -464,12 +648,12 @@ export function AppShell() {
             <strong>Clair, juste, utile.</strong>Vos écritures et budgets, au même endroit.
           </div>
           <div className="profile-row">
-            <div className="avatar">
-              {cloudUser ? cloudUser.email.slice(0, 1).toUpperCase() : "L"}
-            </div>
+            <div className="avatar">{cloudUser.email.slice(0, 1).toUpperCase()}</div>
             <div>
               <div className="profile-name">{cloudUser.email}</div>
-              <div className="profile-mode">Compte connecté</div>
+              <div className="profile-mode">
+                {offlineMode ? "Travail hors connexion" : "Compte connecté"}
+              </div>
             </div>
           </div>
         </div>
@@ -495,13 +679,18 @@ export function AppShell() {
                 ),
               )}
             </select>
-            <span className="sync-status" title={syncLabels[syncState]}>
+            <span
+              className={`sync-status ${offlineMode ? "offline-status" : ""}`}
+              title={syncLabels[syncState]}
+            >
+              {offlineMode && <WifiOff size={13} />}
               <i className={`sync-dot ${statusClass}`} />
               {syncLabels[syncState]}
             </span>
             <button
               className="btn ghost small"
               title="Se déconnecter"
+              aria-label="Se déconnecter"
               onClick={() => void logout()}
             >
               <LogOut size={14} />
@@ -509,11 +698,35 @@ export function AppShell() {
           </div>
         </header>
         <div className="content">
-          {syncState === "error" && cloudUser && (
+          {syncState === "offline" && (
+            <div className="notice warning no-print offline-banner" style={{ marginBottom: 15 }}>
+              <span>
+                Vous travaillez hors connexion. Vos changements sont conservés sur cet appareil et
+                seront transmis dès le retour du réseau.
+              </span>
+              <div className="actions">
+                <Button size="small" onClick={() => void resumeConnection()}>
+                  Rétablir la connexion
+                </Button>
+                <Button size="small" onClick={() => void logout()}>
+                  Se déconnecter
+                </Button>
+              </div>
+            </div>
+          )}
+          {syncState === "error" && (
             <div className="notice warning no-print" style={{ marginBottom: 15 }}>
-              La dernière modification n’a pas pu être enregistrée dans votre espace. Vos données
-              restent conservées sur cet appareil. Vérifiez votre connexion, puis réessayez.
-              <Button size="small" onClick={() => setSyncState("loading")}>
+              <span>
+                La dernière mise à jour n’a pas abouti. Vérifiez votre connexion puis réessayez.
+              </span>
+              <Button
+                size="small"
+                onClick={() => {
+                  setSyncState(offlineMode ? "offline" : "saving");
+                  if (offlineMode) void resumeConnection();
+                  else setRetryToken((value) => value + 1);
+                }}
+              >
                 Réessayer
               </Button>
             </div>
@@ -554,7 +767,7 @@ export function AppShell() {
       {syncState === "conflict" && (
         <Modal
           title="Deux versions à comparer"
-          subtitle="Votre espace a changé depuis la dernière consultation."
+          subtitle="Votre espace a évolué depuis sa dernière mise à jour."
           onClose={() => {}}
         >
           <div className="notice warning">
@@ -562,7 +775,7 @@ export function AppShell() {
           </div>
           <div className="actions" style={{ marginTop: 15 }}>
             <Button onClick={() => void resolveConflict("remote")}>
-              Conserver l’autre version
+              Conserver la version du compte
             </Button>
             <Button variant="primary" onClick={() => void resolveConflict("local")}>
               Conserver cette version

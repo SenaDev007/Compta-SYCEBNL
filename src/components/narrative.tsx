@@ -96,8 +96,12 @@ export function NarrativeView({ workspace, setWorkspace, year, notify }: ViewPro
     if (exporting) return;
     setExporting(true);
     try {
-      await exportPdf(workspace, year, "narrative");
-      notify("Le rapport narratif a été téléchargé.");
+      const source = await exportPdf(workspace, year, "narrative");
+      notify(
+        source === "print"
+          ? "Le rapport est prêt à être imprimé ou enregistré au format PDF."
+          : "Le rapport narratif a été téléchargé.",
+      );
     } catch (error) {
       notify(error instanceof Error ? error.message : "Le rapport n’a pas pu être créé.");
     } finally {

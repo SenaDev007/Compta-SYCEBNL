@@ -1265,3 +1265,673 @@ th.num {
     color: #a2b0a8;
   }
 }
+
+/* Accueil de marque, animations douces et surfaces PWA */
+.brand-mark-image {
+  display: block;
+  flex: 0 0 auto;
+  object-fit: cover;
+  border-radius: 15px;
+  background: #142b23;
+  box-shadow: 0 8px 24px #0d201938;
+}
+.auth-screen {
+  position: relative;
+  isolation: isolate;
+  min-height: 100svh;
+  grid-template-columns: minmax(0, 1.08fr) minmax(430px, 0.92fr);
+  overflow: hidden;
+  background: #f6f7f3;
+}
+.auth-visual {
+  z-index: 1;
+  min-height: 100svh;
+  padding: clamp(30px, 4.5vw, 72px);
+  background:
+    radial-gradient(ellipse at 76% 60%, #1b5a43 0, transparent 46%),
+    linear-gradient(138deg, #10251e 2%, #142b23 53%, #18392c 100%);
+}
+.auth-visual::before,
+.auth-visual::after {
+  width: min(65vw, 780px);
+  height: min(65vw, 780px);
+  right: -38%;
+  top: 16%;
+  border-color: #ffffff0c;
+  pointer-events: none;
+}
+.auth-visual::after {
+  width: min(48vw, 570px);
+  height: min(48vw, 570px);
+  right: -25%;
+  top: 27%;
+  border-color: #d5ad6c24;
+}
+.auth-scene {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.finance-particle {
+  position: absolute;
+  border-radius: 50%;
+  background: #dfbd80;
+  box-shadow: 0 0 16px #dfbd8040;
+  animation: particle-drift 16s ease-in-out infinite;
+}
+.finance-particle:nth-child(3n) {
+  background: #a4d3b2;
+  box-shadow: 0 0 15px #a4d3b240;
+}
+.finance-orbit {
+  position: absolute;
+  width: 42vw;
+  height: 42vw;
+  min-width: 300px;
+  min-height: 300px;
+  border: 1px solid #ffffff0c;
+  border-radius: 50%;
+  left: 26%;
+  top: 26%;
+  animation: orbit-drift 38s linear infinite;
+}
+.orbit-two {
+  width: 30vw;
+  height: 30vw;
+  left: 35%;
+  top: 35%;
+  border-color: #d5ad6c18;
+  animation-direction: reverse;
+  animation-duration: 46s;
+}
+.finance-icon {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  color: #e4c68f;
+  border: 1px solid #ffffff22;
+  border-radius: 17px;
+  background: #ffffff0a;
+  box-shadow: 0 18px 50px #07170f20;
+  backdrop-filter: blur(7px);
+  animation: icon-float 8s ease-in-out infinite;
+}
+.finance-icon svg {
+  width: 22px;
+  height: 22px;
+  stroke-width: 1.55;
+}
+.finance-icon-book {
+  top: 22%;
+  right: 12%;
+  transform: rotate(-8deg);
+}
+.finance-icon-chart {
+  top: 42%;
+  right: 5%;
+  animation-delay: -2.5s;
+}
+.finance-icon-coins {
+  bottom: 21%;
+  right: 17%;
+  animation-delay: -4.5s;
+}
+.finance-icon-calc {
+  top: 17%;
+  left: 58%;
+  width: 44px;
+  height: 44px;
+  animation-delay: -6s;
+}
+.finance-icon-bank {
+  bottom: 30%;
+  left: 50%;
+  width: 43px;
+  height: 43px;
+  animation-delay: -1.5s;
+}
+.auth-topline,
+.auth-brand-lockup,
+.auth-foot,
+.auth-feature-row,
+.auth-feature,
+.auth-card-brand {
+  display: flex;
+  align-items: center;
+}
+.auth-topline {
+  position: relative;
+  z-index: 2;
+  justify-content: space-between;
+  gap: 18px;
+}
+.auth-brand-lockup {
+  gap: 13px;
+}
+.auth-brand-lockup .brand-title {
+  font-size: 16px;
+  letter-spacing: -0.3px;
+}
+.auth-brand-lockup .brand-sub {
+  color: #aab9af;
+  font-size: 9px;
+}
+.install-app-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #ffffff3c;
+  border-radius: 999px;
+  padding: 10px 15px;
+  color: #f3f4ec;
+  background: #ffffff0b;
+  font-size: 11px;
+  font-weight: 650;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    transform 180ms ease;
+}
+.install-app-button:hover {
+  transform: translateY(-1px);
+  border-color: #d6aa63aa;
+  background: #ffffff17;
+}
+.install-app-button.light {
+  color: #1d4738;
+  border-color: #dbe5dd;
+  background: #f4f8f4;
+}
+.auth-hero-copy {
+  position: relative;
+  z-index: 2;
+  max-width: 700px;
+  margin: auto 0;
+  padding: 70px 0 54px;
+  animation: hero-enter 720ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.auth-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 22px;
+  color: #c8d6c9;
+  font-size: 10px;
+  font-weight: 680;
+  letter-spacing: 0.15em;
+}
+.auth-eyebrow span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #d6aa63;
+  box-shadow: 0 0 0 5px #d6aa6319;
+}
+.auth-hero-copy h1 {
+  max-width: 660px;
+  margin: 0;
+  color: #f3f3eb;
+  font-size: clamp(38px, 4.3vw, 65px);
+  line-height: 1.04;
+  letter-spacing: -0.055em;
+  font-weight: 650;
+}
+.auth-hero-copy h1 em {
+  display: block;
+  margin-top: 6px;
+  color: #dfbd80;
+  font-style: normal;
+  font-weight: 520;
+}
+.auth-hero-copy > p {
+  max-width: 450px;
+  margin: 23px 0 0;
+  color: #b6c7bc;
+  font-size: 14px;
+  line-height: 1.8;
+}
+.auth-feature-row {
+  flex-wrap: wrap;
+  gap: 11px;
+  margin-top: 32px;
+}
+.auth-feature {
+  gap: 8px;
+  min-height: 37px;
+  padding: 0 12px;
+  border: 1px solid #ffffff20;
+  border-radius: 999px;
+  background: #ffffff08;
+  color: #d9e2da;
+  font-size: 10px;
+}
+.auth-feature svg {
+  width: 14px;
+  height: 14px;
+  color: #d6aa63;
+  stroke-width: 1.8;
+}
+.auth-foot {
+  position: relative;
+  z-index: 2;
+  justify-content: space-between;
+  gap: 16px;
+  color: #9eb1a5;
+  font-size: 10px;
+}
+.auth-foot-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #d6c6a0;
+}
+.auth-box-wrap {
+  position: relative;
+  z-index: 1;
+  min-height: 100svh;
+  padding: clamp(24px, 4.5vw, 68px);
+  background: linear-gradient(145deg, #f8f9f6, #f0f3ee);
+}
+.auth-box.auth-card {
+  width: min(440px, 100%);
+  padding: 32px;
+  border: 1px solid #e7ece6;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow:
+    0 22px 80px #163a2912,
+    0 2px 8px #163a2907;
+  animation: card-enter 620ms 90ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.auth-card-brand {
+  gap: 12px;
+  margin-bottom: 29px;
+  color: #708077;
+  font-size: 11px;
+  font-weight: 620;
+}
+.auth-box.auth-card h2 {
+  color: #18372b;
+  font-size: 27px;
+  line-height: 1.16;
+  letter-spacing: -0.045em;
+}
+.auth-box.auth-card > p {
+  color: #75837a;
+  line-height: 1.65;
+  margin-bottom: 22px;
+}
+.auth-card .tabs {
+  border-color: #e9eee9;
+}
+.auth-card .tab {
+  font-size: 12px;
+  padding: 11px 14px;
+}
+.auth-card .tab.active {
+  color: #176b52;
+  border-color: #176b52;
+}
+.auth-card .field label {
+  color: #53645a;
+  font-size: 11px;
+}
+.auth-card .input {
+  min-height: 43px;
+  border-color: #dfe7e0;
+  background: #fff;
+  color: #20362b;
+  font-size: 13px;
+}
+.auth-card .input::placeholder {
+  color: #a1aaa4;
+}
+.auth-card .input:focus {
+  border-color: #70a78a;
+  box-shadow: 0 0 0 3px #176b5214;
+}
+.auth-card .auth-submit {
+  min-height: 46px;
+  margin-top: 19px;
+  border-radius: 10px;
+  font-size: 13px;
+  box-shadow: 0 8px 20px #176b5225;
+}
+.auth-offline-note {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  margin-top: 21px;
+  padding: 12px 13px;
+  border: 1px solid #e8ede6;
+  border-radius: 11px;
+  background: #f7f9f5;
+}
+.auth-offline-note p {
+  margin: 0;
+  color: #69776e;
+  font-size: 10px;
+  line-height: 1.55;
+}
+.auth-note-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: #56a177;
+}
+.auth-privacy-line {
+  margin-top: 16px;
+  color: #9aa49d;
+  text-align: center;
+  font-size: 9px;
+}
+.auth-error {
+  margin-top: 14px;
+  font-size: 11px;
+}
+.auth-install-message {
+  margin-top: 13px;
+  font-size: 10px;
+}
+.auth-mobile-install {
+  display: none;
+}
+.offline-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.offline-banner .actions {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  margin: 0;
+}
+@keyframes particle-drift {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.7);
+  }
+  22% {
+    opacity: 0.62;
+  }
+  52% {
+    opacity: 0.34;
+    transform: translate3d(12px, -15px, 0) scale(1);
+  }
+  82% {
+    opacity: 0.58;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(-6px, -30px, 0) scale(0.75);
+  }
+}
+@keyframes icon-float {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -12px;
+  }
+}
+@keyframes orbit-drift {
+  to {
+    rotate: 360deg;
+  }
+}
+@keyframes hero-enter {
+  from {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@media (max-width: 1000px) {
+  .auth-screen {
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 0.88fr);
+  }
+  .auth-visual {
+    padding: 36px;
+  }
+  .auth-hero-copy h1 {
+    font-size: clamp(36px, 5.2vw, 54px);
+  }
+  .auth-feature-row {
+    max-width: 430px;
+  }
+  .auth-box-wrap {
+    padding: 28px;
+  }
+}
+@media (max-width: 800px) {
+  .auth-screen {
+    display: flex;
+    flex-direction: column;
+  }
+  .auth-visual {
+    display: flex;
+    min-height: 410px;
+    padding: 25px 28px 22px;
+  }
+  .auth-visual::before {
+    width: 520px;
+    height: 520px;
+    right: -260px;
+    top: 2%;
+  }
+  .auth-visual::after {
+    width: 380px;
+    height: 380px;
+    right: -180px;
+    top: 14%;
+  }
+  .auth-topline {
+    align-items: flex-start;
+  }
+  .install-app-button {
+    padding: 9px 12px;
+    font-size: 10px;
+  }
+  .auth-hero-copy {
+    padding: 44px 0 34px;
+  }
+  .auth-hero-copy h1 {
+    max-width: 600px;
+    font-size: clamp(35px, 7vw, 53px);
+  }
+  .auth-hero-copy > p {
+    max-width: 470px;
+    font-size: 13px;
+    margin-top: 15px;
+  }
+  .auth-feature-row {
+    margin-top: 21px;
+  }
+  .auth-foot {
+    font-size: 9px;
+  }
+  .auth-box-wrap {
+    min-height: auto;
+    padding: 28px 22px 42px;
+  }
+  .auth-box.auth-card {
+    width: min(490px, 100%);
+  }
+}
+@media (max-width: 560px) {
+  .auth-visual {
+    min-height: 340px;
+    padding: 20px 19px 17px;
+  }
+  .auth-topline {
+    gap: 8px;
+  }
+  .auth-brand-lockup {
+    gap: 9px;
+  }
+  .auth-brand-lockup .brand-mark-image {
+    width: 42px !important;
+    height: 42px !important;
+    border-radius: 12px;
+  }
+  .auth-brand-lockup .brand-title {
+    font-size: 13px;
+  }
+  .auth-brand-lockup .brand-sub {
+    font-size: 8px;
+    letter-spacing: 0.04em;
+  }
+  .install-app-button {
+    gap: 6px;
+    padding: 8px 9px;
+    font-size: 9px;
+    white-space: nowrap;
+  }
+  .auth-topline > .install-app-button {
+    display: none;
+  }
+  .offline-banner {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .offline-banner .actions {
+    justify-content: flex-start;
+  }
+  .auth-hero-copy {
+    padding: 40px 0 23px;
+  }
+  .auth-eyebrow {
+    margin-bottom: 15px;
+    font-size: 8px;
+    letter-spacing: 0.12em;
+  }
+  .auth-hero-copy h1 {
+    font-size: clamp(32px, 9vw, 43px);
+  }
+  .auth-hero-copy > p {
+    font-size: 12px;
+    line-height: 1.58;
+    margin-top: 12px;
+  }
+  .auth-feature-row {
+    gap: 6px;
+    margin-top: 15px;
+  }
+  .auth-feature {
+    min-height: 30px;
+    gap: 5px;
+    padding: 0 8px;
+    font-size: 8px;
+  }
+  .auth-feature svg {
+    width: 12px;
+    height: 12px;
+  }
+  .auth-foot {
+    display: none;
+  }
+  .finance-icon {
+    width: 39px;
+    height: 39px;
+    border-radius: 13px;
+  }
+  .finance-icon svg {
+    width: 17px;
+    height: 17px;
+  }
+  .finance-icon-book {
+    top: 26%;
+    right: 8%;
+  }
+  .finance-icon-chart {
+    top: 48%;
+    right: 4%;
+  }
+  .finance-icon-coins {
+    bottom: 17%;
+    right: 14%;
+  }
+  .finance-icon-calc {
+    top: 17%;
+    left: 67%;
+  }
+  .finance-icon-bank {
+    bottom: 22%;
+    left: 49%;
+  }
+  .auth-box-wrap {
+    padding: 24px 15px calc(30px + env(safe-area-inset-bottom));
+  }
+  .auth-box.auth-card {
+    padding: 23px 19px;
+    border-radius: 18px;
+  }
+  .auth-card-brand {
+    margin-bottom: 22px;
+  }
+  .auth-box.auth-card h2 {
+    font-size: 23px;
+  }
+  .auth-box.auth-card > p {
+    font-size: 11px;
+    margin-bottom: 18px;
+  }
+  .auth-mobile-install {
+    display: flex;
+    justify-content: flex-end;
+    margin: -5px 0 16px;
+  }
+  .auth-mobile-install .install-app-button {
+    font-size: 9px;
+  }
+}
+@media (max-width: 360px) {
+  .auth-visual {
+    min-height: 360px;
+  }
+  .auth-brand-lockup .brand-sub {
+    display: none;
+  }
+  .auth-hero-copy h1 {
+    font-size: 31px;
+  }
+  .auth-feature {
+    padding: 0 6px;
+    font-size: 7.5px;
+  }
+  .auth-box.auth-card {
+    padding: 20px 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

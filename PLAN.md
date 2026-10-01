@@ -2,51 +2,43 @@
 
 ## Objectif
 
-Application web de tenue comptable SYCEBNL en français, pour PC et mobile, avec montants en FCFA sans décimales. La cible de déploiement demandée est Vercel. Une base PostgreSQL compatible, provisionnée séparément, conserve les comptes et espaces comptables ; aucun secret d’accès ne doit être inclus dans le dépôt.
+Application web française de comptabilité associative, adaptable aux téléphones, tablettes et ordinateurs, déployée sur Vercel avec une base distante. Le nom reste **Compta SYCEBNL+**.
 
-Le cahier des charges guide les calculs, sans constituer une certification de conformité. Les référentiels comptables et budgets propres à l’organisation doivent être fournis et vérifiés ; les données de départ sont identifiées comme exemples.
+## Accès, confidentialité et continuité hors connexion
 
-## Accès et confidentialité
+- L’accès aux données comptables est toujours précédé d’une connexion au compte ; aucune donnée de compte n’est affichée à un visiteur.
+- Une première connexion en ligne est nécessaire pour créer le compte et préparer l’accès hors connexion sur cet appareil.
+- Après cette première connexion, la personne peut se reconnecter avec son adresse et son mot de passe hors connexion, continuer à travailler, enregistrer ses changements, puis se déconnecter et revenir hors connexion.
+- L’espace conservé sur l’appareil est chiffré avec Web Crypto AES-GCM ; la clé est dérivée du mot de passe par PBKDF2. Aucun mot de passe n’est stocké. Le secret de session nécessaire à une reprise immédiate après un accès hors connexion reste uniquement en mémoire et est effacé après reconnexion ou déconnexion.
+- À la reprise du réseau, l’application se reconnecte au compte et envoie les changements en attente à la base distante. Les versions concurrentes ne sont jamais écrasées silencieusement : l’utilisateur compare les deux versions.
+- Le service worker met en cache le shell et les ressources de l’application, mais jamais les réponses des API ni les données financières reçues du serveur.
+- L’accès hors connexion est propre à l’appareil et à son navigateur : effacer les données de navigation ou changer d’appareil efface ou rend indisponible la copie locale. La création initiale de compte reste une opération en ligne.
 
-- La page de connexion ou de création de compte est le seul écran présenté avant authentification. Les données d’exemple et de compte ne sont pas exposées aux visiteurs.
-- Chaque compte dispose d’un espace isolé ; l’API contrôle la session et la cohérence des données avant de les lire ou les modifier.
-- Après connexion, une copie liée au compte peut être conservée sur l’appareil. L’enregistrement vers la base est différé et les versions concurrentes doivent être comparées avant résolution.
-- Les sauvegardes sont téléchargées au moyen d’une route protégée. La restauration valide le fichier, affiche son contenu et demande une confirmation avant remplacement.
-- Les téléchargements de PDF, classeurs et sauvegardes sont générés côté serveur après validation de la session et des données.
+## Identité et expérience d’accueil
 
-## Direction artistique
-
-- **Mouvement** : institutionnel contemporain, inspiré des registres comptables imprimés et des outils de gestion des organisations à impact.
-- **Principes** : précision lisible ; confiance sans austérité ; densité maîtrisée des tableaux ; hiérarchie claire entre décisions et chiffres.
-- **Palette** : vert forêt profond pour la stabilité, ivoire papier pour la lecture prolongée, cuivre discret pour les repères importants, ardoise pour les données secondaires.
-- **Mise en page** : navigation persistante sur grand écran, barre compacte sur mobile, tableaux et fiches de synthèse clairs.
-- **Signatures** : monogramme « S+ », fines lignes de registre, repères de projet colorés.
-- **Interaction** : saisie contextualisée, contrôles visibles et confirmation avant suppression ou restauration.
-- **Typographie** : Inter pour l’interface, chiffres tabulaires pour les montants et numéros de compte.
-- **Voix** : claire, opérationnelle et limitée au vocabulaire comptable.
+- **Mouvement** : institutionnel contemporain, registres comptables remis au goût du jour.
+- **Principes** : précision lisible ; confiance ; mouvement discret ; hiérarchie claire des chiffres.
+- **Palette** : vert forêt profond, ivoire papier, cuivre chaleureux et ardoise.
+- **Signatures** : symbole original de registre ouvert et repère cuivre « + » ; lignes de grand livre ; particules flottantes et pictogrammes comptables sur l’écran d’accès.
+- **Animations** : lentes, diffuses, sans clignotement ; elles respectent `prefers-reduced-motion`.
+- **Mise en page** : première page d’accueil et de connexion expressive, sans données privées, puis navigation comptable responsive.
+- **Typographie** : Inter/system UI, avec chiffres tabulaires pour les montants.
+- **Voix** : française, claire, chaleureuse et limitée au vocabulaire compréhensible par une organisation utilisatrice.
 
 ## Architecture
 
-- Next.js App Router et TypeScript strict.
-- Interface française, responsive, avec navigation par modules.
-- PostgreSQL compatible Neon, client adapté aux routes serverless de Vercel ; migration idempotente des tables de comptes et d’espaces.
-- Authentification courriel/mot de passe, mot de passe haché et cookie de session HTTP-only signé.
-- Routes privées pour l’espace, les exports, les sauvegardes et la restauration ; vérification d’origine pour les modifications.
-- Modules comptables : contrôles en partie double, référence aux comptes et projets existants, calcul des états, budgets et rapprochements.
-- Production des PDF et classeurs sur le serveur, avec présentation professionnelle.
+- Next.js App Router, React, TypeScript strict.
+- Service worker sur mesure et manifeste PWA avec icônes PNG `any` et `maskable`, icône Apple, installation proposée lorsqu’elle est disponible.
+- `src/lib/offline-vault.ts` : coffre IndexedDB, chiffrement, déchiffrement et validation de la copie hors connexion.
+- `src/components/app-shell.tsx` : accès requis, état hors connexion, sauvegarde chiffrée des changements et synchronisation optimiste versionnée.
+- `src/components/cloud-access.tsx` : première page animée, connexion/création en ligne et repli vers la connexion locale chiffrée seulement en cas d’indisponibilité du service.
+- `public/sw.js`, `public/manifest.webmanifest` et `public/icon-*.png` : chargement hors connexion et installation.
+- PostgreSQL serverless reste l’espace distant de référence. Les routes existantes continuent d’imposer l’authentification et la validation du contenu.
 
 ## Modules fonctionnels
 
-Tableau de bord ; plan comptable (lecture, création, modification, import, suppression protégée) ; journal en partie double (lecture, création, modification, suppression) ; projets et budgets (création, édition, lignes hiérarchiques et import) ; grand livre ; balance ; compte d’exploitation ; emplois-ressources simplifié ; suivi budgétaire ; rapprochement bancaire (création, pointage, mise à jour, suppression) ; rapport narratif en cinq parties ; sauvegarde, restauration confirmée et téléchargements PDF/classeur.
+Tableau de bord ; plan comptable ; journal en partie double ; projets et budgets ; grand livre ; balance ; compte d’exploitation ; emplois-ressources ; suivi budgétaire ; rapprochement ; rapport narratif ; sauvegardes et restauration confirmée. Ces modules conservent leurs règles métier et leurs exports existants ; leur nouvelle persistance locale est chiffrée.
 
-Les intitulés visibles de la hiérarchie budgétaire sont Section, Résultat, Produit, Activité et Dépense. Les formats historiques anglais sont reconnus par l’import, sans être présentés comme libellés à l’écran.
+## Mise en service et limites
 
-## Vérifications et mise en service
-
-Le dépôt fournit les commandes `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm format:check` et `pnpm build`. Les essais automatisés couvrent les calculs, imports Excel/CSV, restauration, génération PDF/classeur et contrôles de données.
-
-L’application n’est pas encore reliée au compte Vercel de l’utilisateur ni à sa base de production. L’ajout des variables de déploiement, l’exécution de la migration, puis un essai réel de création et connexion nécessitent cet accès. Le contrôle local ne remplace pas cet essai en environnement réel.
-
-## Limites
-
-Le bilan complet, les annexes OHADA détaillées, la clôture/report à nouveau, l’import bancaire automatique, l’audit des modifications, le verrouillage de période et le travail partagé à plusieurs avec rôles ne sont pas inclus. Les hypothèses relatives aux comptes 701 et 842, au classement des comptes 8 et au tableau emplois-ressources doivent être confirmées par un professionnel compétent.
+L’installation PWA est proposée par le navigateur quand celui-ci le permet. Sur iPhone/iPad, l’installation peut nécessiter « Partager » puis « Sur l’écran d’accueil ». Une copie hors connexion ne se partage pas entre appareils et ne remplace pas une sauvegarde téléchargée.

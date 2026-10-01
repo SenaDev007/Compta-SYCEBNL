@@ -1,4 +1,13 @@
 import * as XLSX from "xlsx";
+import * as XLSXStyle from "xlsx-js-style";
+import {
+  balanceReport,
+  employmentResources,
+  operatingStatement,
+  projectBudget,
+  reconcileAccount,
+  yearEntries,
+} from "./calculations";
 import { validateWorkspace } from "./validation";
 import type { Account, BudgetKind, Project, Workspace } from "./types";
 
@@ -176,16 +185,291 @@ async function downloadFromServer(
   window.setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
-export function downloadBackup(workspace: Workspace) {
-  return downloadFromServer("backup", workspace);
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
-export function exportWorkbook(workspace: Workspace, year: number) {
-  return downloadFromServer("workbook", workspace, { year });
+function downloadLocalBackup(workspace: Workspace) {
+  const checked = validateWorkspace(workspace);
+  if (!checked.success) throw new Error("La sauvegarde ne peut pas être préparée.");
+  const content = JSON.stringify(
+    {
+      format: "compta-sycebnl-plus",
+      exportedAt: new Date().toISOString(),
+      workspace: checked.data,
+    },
+    null,
+    2,
+  );
+  downloadBlob(
+    new Blob([content], { type: "application/octet-stream" }),
+    "compta-sycebnl-sauvegarde.sycebnl",
+  );
 }
 
-export function exportPdf(workspace: Workspace, year: number, kind: "financial" | "narrative") {
-  return downloadFromServer("pdf", workspace, { year, kind });
+async function createLocalWorkbook(workspace: Workspace, year: number) {
+  const workbook = XLSXStyle.utils.book_new();
+  const headerStyle = {
+    fill: { fgColor: { rgb: "17382D" } },
+    font: { bold: true, color: { rgb: "FFFFFF" }, sz: 10 },
+    alignment: { horizontal: "center", vertical: "center", wrapText: true },
+    border: { bottom: { style: "medium", color: { rgb: "C29655" } } },
+  };
+  const bodyStyle = {
+    font: { color: { rgb: "26352E" }, sz: 10 },
+    alignment: { vertical: "center" },
+    border: { bottom: { style: "hair", color: { rgb: "E4EAE5" } } },
+  };
+  const addSheet = (
+    name: string,
+    headers: string[],
+    rows: Array<Array<string | number>>,
+    widths: number[],
+    amountHeaders: string[] = [],
+  ) => {
+    const sheet = XLSXStyle.utils.aoa_to_sheet([headers, ...rows]);
+    const range = XLSXStyle.utils.decode_range(sheet["!ref"] || "A1:A1");
+    sheet["!cols"] = widths.map((wch) => ({ wch }));
+    sheet["!autofilter"] = { ref: XLSXStyle.utils.encode_range(range) };
+    sheet["!freeze"] = {
+      xSplit: 0,
+      ySplit: 1,
+      topLeftCell: "A2",
+      activePane: "bottomLeft",
+      state: "frozen",
+    };
+    for (let column = range.s.c; column <= range.e.c; column += 1) {
+      const cell = sheet[XLSXStyle.utils.encode_cell({ r: 0, c: column })];
+      if (cell) cell.s = headerStyle;
+    }
+    for (let row = 1; row <= range.e.r; row += 1) {
+      for (let column = range.s.c; column <= range.e.c; column += 1) {
+        const cell = sheet[XLSXStyle.utils.encode_cell({ r: row, c: column })];
+        if (!cell) continue;
+        const header = headers[column] || "";
+        cell.s = {
+          ...bodyStyle,
+          alignment: {
+            ...bodyStyle.alignment,
+            horizontal: amountHeaders.includes(header) ? "right" : "left",
+          },
+          ...(amountHeaders.includes(header)
+            ? { numFmt: header === "Taux" ? "0.0%" : "#,##0;[Red]-#,##0;–" }
+            : {}),
+          ...(row % 2 === 0 ? { fill: { fgColor: { rgb: "F3F6F3" } } } : {}),
+        };
+      }
+    }
+    sheet["!rows"] = [{ hpt: 27 }];
+    XLSXStyle.utils.book_append_sheet(workbook, sheet, name.slice(0, 31));
+  };
+
+  const entries = yearEntries(workspace.entries, year);
+  const balance = balanceReport(workspace.accounts, entries);
+  const operating = operatingStatement(workspace.accounts, entries);
+  const employment = employmentResources(workspace.accounts, entries);
+  addSheet(
+    "Journal",
+    ["Date", "Journal", "Pièce", "Libellé", "Projet", "Compte", "Débit", "Crédit"],
+    entries.flatMap((entry) =>
+      entry.lines.map((line) => [
+        entry.date,
+        entry.journal,
+        entry.reference,
+        entry.label,
+        workspace.projects.find((project) => project.id === entry.projectId)?.code || "",
+        line.accountNumber,
+        line.debit,
+        line.credit,
+      ]),
+    ),
+    [14, 12, 18, 38, 18, 14, 16, 16],
+    ["Débit", "Crédit"],
+  );
+  addSheet(
+    "Plan comptable",
+    ["Numéro", "Libellé", "Origine"],
+    workspace.accounts.map((account) => [
+      account.number,
+      account.label,
+      account.source === "import"
+        ? "Importé"
+        : account.source === "demo"
+          ? "Exemple"
+          : "Personnalisé",
+    ]),
+    [15, 54, 18],
+  );
+  addSheet(
+    "Balance générale",
+    [
+      "Compte",
+      "Libellé",
+      "Mouvement débit",
+      "Mouvement crédit",
+      "Solde débiteur",
+      "Solde créditeur",
+    ],
+    [
+      ...balance.rows.map((row) => [
+        row.number,
+        row.label,
+        row.debit,
+        row.credit,
+        row.debitBalance,
+        row.creditBalance,
+      ]),
+      [
+        "",
+        "Totaux",
+        balance.totalDebit,
+        balance.totalCredit,
+        balance.totalDebitBalance,
+        balance.totalCreditBalance,
+      ],
+    ],
+    [14, 42, 20, 20, 20, 20],
+    ["Mouvement débit", "Mouvement crédit", "Solde débiteur", "Solde créditeur"],
+  );
+  addSheet(
+    "Compte exploitation",
+    ["Nature", "Compte", "Libellé", "Montant"],
+    [
+      ...operating.products.map((row) => ["Produit", row.number, row.label, row.amount]),
+      ...operating.charges.map((row) => ["Charge", row.number, row.label, row.amount]),
+      ["Résultat", "", "Excédent / déficit", operating.result],
+    ],
+    [16, 14, 48, 20],
+    ["Montant"],
+  );
+  addSheet(
+    "Emplois et ressources",
+    ["Rubrique", "Nature", "Montant"],
+    [
+      ...employment.rows.map((row) => [row.label, row.type, row.amount]),
+      ["Total des ressources", "Ressources", employment.resources],
+      ["Total des emplois", "Emplois", employment.jobs],
+      ["Solde ressources − emplois", "Solde", employment.balance],
+    ],
+    [48, 20, 20],
+    ["Montant"],
+  );
+  addSheet(
+    "Budget par projet",
+    [
+      "Code projet",
+      "Projet",
+      "Code ligne",
+      "Ligne de dépense",
+      "Compte",
+      "Budget",
+      "Part bailleur",
+      "Part porteur",
+      "Réalisé",
+      "Reste",
+      "Taux",
+    ],
+    workspace.projects.flatMap((project) =>
+      projectBudget(project, entries).details.map((line) => [
+        project.code,
+        project.title,
+        line.code,
+        line.label,
+        line.accountNumber || "Non affecté",
+        line.budget,
+        line.donorShare,
+        line.holderShare,
+        line.realized,
+        line.remaining,
+        line.rate,
+      ]),
+    ),
+    [16, 36, 16, 42, 14, 18, 18, 18, 18, 18, 14],
+    ["Budget", "Part bailleur", "Part porteur", "Réalisé", "Reste", "Taux"],
+  );
+  addSheet(
+    "Rapprochement",
+    ["Compte", "Date du relevé", "Solde du relevé", "Solde comptable théorique", "Écart"],
+    workspace.reconciliations.map((item) => {
+      const result = reconcileAccount(workspace, item);
+      return [
+        item.accountNumber,
+        item.asOf,
+        item.statementBalance,
+        result.theoretical,
+        result.difference,
+      ];
+    }),
+    [16, 18, 22, 28, 20],
+    ["Solde du relevé", "Solde comptable théorique", "Écart"],
+  );
+
+  const bytes = XLSXStyle.write(workbook, { bookType: "xlsx", type: "array", compression: true });
+  downloadBlob(
+    new Blob([bytes as BlobPart], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }),
+    `compta-sycebnl-etats-${year}.xlsx`,
+  );
+}
+
+export async function downloadBackup(workspace: Workspace): Promise<"downloaded" | "device"> {
+  if (!navigator.onLine) {
+    downloadLocalBackup(workspace);
+    return "device";
+  }
+  try {
+    await downloadFromServer("backup", workspace);
+    return "downloaded";
+  } catch (cause) {
+    if (!(cause instanceof TypeError) && navigator.onLine) throw cause;
+    downloadLocalBackup(workspace);
+    return "device";
+  }
+}
+
+export async function exportWorkbook(
+  workspace: Workspace,
+  year: number,
+): Promise<"downloaded" | "device"> {
+  if (!navigator.onLine) {
+    await createLocalWorkbook(workspace, year);
+    return "device";
+  }
+  try {
+    await downloadFromServer("workbook", workspace, { year });
+    return "downloaded";
+  } catch (cause) {
+    if (!(cause instanceof TypeError) && navigator.onLine) throw cause;
+    await createLocalWorkbook(workspace, year);
+    return "device";
+  }
+}
+
+export async function exportPdf(
+  workspace: Workspace,
+  year: number,
+  kind: "financial" | "narrative",
+): Promise<"downloaded" | "print"> {
+  if (!navigator.onLine) {
+    window.print();
+    return "print";
+  }
+  try {
+    await downloadFromServer("pdf", workspace, { year, kind });
+    return "downloaded";
+  } catch (cause) {
+    if (!(cause instanceof TypeError) && navigator.onLine) throw cause;
+    window.print();
+    return "print";
+  }
 }
 
 export async function readBackup(file: File): Promise<Workspace> {

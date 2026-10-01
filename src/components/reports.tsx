@@ -107,11 +107,21 @@ export function ReportsView({ workspace, year, notify }: ViewProps) {
     if (exporting) return;
     setExporting(format);
     try {
-      if (format === "excel") await exportWorkbook(workspace, year);
-      else await exportPdf(workspace, year, "financial");
-      notify(
-        format === "excel" ? "Le classeur a été téléchargé." : "Le rapport PDF a été téléchargé.",
-      );
+      if (format === "excel") {
+        const source = await exportWorkbook(workspace, year);
+        notify(
+          source === "device"
+            ? "Le classeur a été créé sur cet appareil."
+            : "Le classeur a été téléchargé.",
+        );
+      } else {
+        const source = await exportPdf(workspace, year, "financial");
+        notify(
+          source === "print"
+            ? "Le rapport est prêt à être imprimé ou enregistré au format PDF."
+            : "Le rapport PDF a été téléchargé.",
+        );
+      }
     } catch (error) {
       notify(error instanceof Error ? error.message : "Le document n’a pas pu être créé.");
     } finally {
