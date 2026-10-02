@@ -299,11 +299,13 @@ async function createLocalWorkbook(workspace: Workspace, year: number) {
     workspace.accounts.map((account) => [
       account.number,
       account.label,
-      account.source === "import"
-        ? "Importé"
-        : account.source === "demo"
-          ? "Exemple"
-          : "Personnalisé",
+      account.source === "map"
+        ? "MAP Afrique"
+        : account.source === "import"
+          ? "Importé"
+          : account.source === "demo"
+            ? "Exemple"
+            : "Personnalisé",
     ]),
     [15, 54, 18],
   );

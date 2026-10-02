@@ -19,7 +19,7 @@ test("les exports serveur produisent un PDF lisible et un classeur avec les éta
       createdAt: "2026-02-01T00:00:00.000Z",
       lines: [
         { id: "line-1", accountNumber: "521", debit: 100000, credit: 0 },
-        { id: "line-2", accountNumber: "741", debit: 0, credit: 100000 },
+        { id: "line-2", accountNumber: "713", debit: 0, credit: 100000 },
       ],
     },
   ];

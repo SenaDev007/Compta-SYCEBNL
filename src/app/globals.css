@@ -409,6 +409,29 @@ button {
   grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
   align-items: start;
 }
+.management-metrics {
+  display: grid;
+  gap: 8px;
+  padding: 17px 20px 18px;
+  color: #5f6d64;
+  font-size: 11px;
+}
+.management-metric-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 29px;
+  padding: 4px 3px;
+  line-height: 1.45;
+}
+.management-metric-row strong {
+  flex: 0 0 auto;
+  color: #24372e;
+}
+.management-note {
+  margin-top: 5px;
+}
 .table-wrap {
   overflow: auto;
   width: 100%;
@@ -550,6 +573,34 @@ th.num {
   align-items: center;
   flex-wrap: wrap;
   margin-bottom: 15px;
+}
+.account-bulk-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 13px;
+  padding: 10px 2px 0;
+  border-top: 1px solid #eef1ee;
+  color: #748078;
+  font-size: 11px;
+}
+.account-select-cell {
+  width: 42px;
+  padding-right: 8px;
+  padding-left: 8px;
+  text-align: center;
+}
+.account-select-checkbox {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--forest);
+  vertical-align: middle;
+}
+.account-select-checkbox:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
 }
 .input,
 .select,
@@ -923,6 +974,19 @@ th.num {
   }
 }
 @media (max-width: 560px) {
+  .management-metrics {
+    gap: 7px;
+    padding: 14px 15px 16px;
+  }
+  .management-metric-row {
+    gap: 10px;
+    padding-right: 1px;
+    padding-left: 1px;
+  }
+  .account-bulk-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
   .sidebar {
     display: none;
   }
@@ -1524,6 +1588,30 @@ th.num {
   color: #9eb1a5;
   font-size: 10px;
 }
+.auth-foot-left {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+.auth-attribution {
+  color: #c6d2c9;
+  font-size: 10px;
+  text-decoration: none;
+  transition: color 180ms ease;
+}
+.auth-attribution strong {
+  color: #dfbd80;
+  font-weight: 650;
+}
+.auth-attribution:hover {
+  color: #fff;
+}
+.auth-attribution:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid #dfbd80;
+  outline-offset: 3px;
+}
 .auth-foot-mark {
   display: inline-flex;
   align-items: center;
@@ -1850,7 +1938,16 @@ th.num {
     height: 12px;
   }
   .auth-foot {
+    display: flex;
+    justify-content: flex-start;
+    margin-top: 2px;
+  }
+  .auth-foot-left > span:first-child,
+  .auth-foot-mark {
     display: none;
+  }
+  .auth-attribution {
+    font-size: 9px;
   }
   .finance-icon {
     width: 39px;

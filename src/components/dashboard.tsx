@@ -1,4 +1,5 @@
 "use client";
+import { useEffect, useState } from "react";
 import { ArrowDownLeft, ArrowUpRight, BookOpen, FolderKanban, Landmark, Plus } from "lucide-react";
 import {
   balanceReport,
@@ -8,10 +9,21 @@ import {
   projectBudget,
   yearEntries,
 } from "@/lib/accounting/calculations";
+import { greetingForHour } from "@/lib/greeting";
 import { Button, Empty, Panel, StatCard } from "./ui";
 import type { ViewProps } from "./shared";
 
-export function Dashboard({ workspace, year, onNewEntry }: ViewProps & { onNewEntry: () => void }) {
+export function Dashboard({
+  workspace,
+  year,
+  onNewEntry,
+  userName,
+}: ViewProps & { onNewEntry: () => void; userName: string }) {
+  const [localHour, setLocalHour] = useState(() => new Date().getHours());
+  useEffect(() => {
+    const timer = window.setInterval(() => setLocalHour(new Date().getHours()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const entries = yearEntries(workspace.entries, year);
   const operating = operatingStatement(workspace.accounts, entries);
   const balance = balanceReport(workspace.accounts, entries);
@@ -25,7 +37,9 @@ export function Dashboard({ workspace, year, onNewEntry }: ViewProps & { onNewEn
       <div className="page-head">
         <div>
           <div className="page-kicker">Vue d’ensemble · Exercice {year}</div>
-          <h1>Bonjour, votre comptabilité.</h1>
+          <h1>
+            {greetingForHour(localHour)}, {userName}.
+          </h1>
           <p>Un regard clair sur les ressources, les projets et les écritures de l’exercice.</p>
         </div>
         <div className="actions">
@@ -188,21 +202,21 @@ export function Dashboard({ workspace, year, onNewEntry }: ViewProps & { onNewEn
           </div>
         </Panel>
         <Panel title="Repères de gestion" caption="Calculés depuis le journal validé">
-          <div style={{ display: "grid", gap: 13, fontSize: 11, color: "#748078" }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              Comptes mouvementés{" "}
+          <div className="management-metrics">
+            <div className="management-metric-row">
+              <span>Comptes mouvementés</span>
               <strong className="num" style={{ color: "#24372e" }}>
                 {balance.rows.length}
               </strong>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              Taux de couverture des ressources{" "}
+            <div className="management-metric-row">
+              <span>Taux de couverture des ressources</span>
               <strong className="num" style={{ color: "#24372e" }}>
                 {percent(operating.totalProducts ? operating.totalCharges / turnover : 0)}
               </strong>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              Écritures à contrôler{" "}
+            <div className="management-metric-row">
+              <span>Écritures à contrôler</span>
               <strong className="num" style={{ color: "#24372e" }}>
                 {
                   entries.filter(
@@ -212,9 +226,9 @@ export function Dashboard({ workspace, year, onNewEntry }: ViewProps & { onNewEn
                 }
               </strong>
             </div>
-            <div className="notice">
-              Les calculs suivent les hypothèses du cahier des charges (notamment la classification
-              des comptes 8), à valider avec le plan comptable officiel.
+            <div className="notice management-note">
+              Ces indicateurs s’appuient sur le référentiel comptable SYCEBNL MAP Afrique et les
+              écritures saisies.
             </div>
           </div>
         </Panel>

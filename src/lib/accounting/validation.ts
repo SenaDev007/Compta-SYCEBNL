@@ -16,7 +16,7 @@ const accountSchema = z.object({
     .trim()
     .regex(/^\d{1,12}$/),
   label: z.string().trim().min(1).max(240),
-  source: z.enum(["demo", "import", "custom"]).optional(),
+  source: z.enum(["demo", "map", "import", "custom"]).optional(),
 });
 
 const budgetLineSchema = z.object({

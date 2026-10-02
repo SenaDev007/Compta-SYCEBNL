@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { createEmptyWorkspace, type Workspace } from "@/lib/accounting/types";
+import { displayNameFromEmail } from "@/lib/greeting";
+import { installMapAfriqueDefaults } from "@/lib/accounting/default-accounts";
 import { validateWorkspace } from "@/lib/accounting/validation";
 import {
   createOfflineCipher,
@@ -179,7 +181,7 @@ export function AppShell() {
         requiresConflictRef.current = false;
         versionRef.current = remote.version;
         lastSyncRef.current = remoteSnapshot;
-        setRawWorkspace(remote.state);
+        setRawWorkspace(installMapAfriqueDefaults(remote.state));
         setCloudUser(user);
         setOfflineMode(false);
         setOfflineReady(false);
@@ -220,6 +222,10 @@ export function AppShell() {
         }
       }
 
+      const beforeMigration = chosen;
+      chosen = installMapAfriqueDefaults(chosen);
+      if (chosen !== beforeMigration) localDirty = true;
+
       offlineCipherRef.current = cipher;
       offlinePasswordRef.current = "";
       dirtyRef.current = localDirty;
@@ -256,13 +262,15 @@ export function AppShell() {
   );
 
   const enterOffline = useCallback((account: OfflineAccount, password: string) => {
+    const workspace = installMapAfriqueDefaults(account.workspace);
+    const migrationRequired = workspace !== account.workspace;
     offlineCipherRef.current = account.cipher;
     offlinePasswordRef.current = password;
-    dirtyRef.current = account.dirty;
+    dirtyRef.current = account.dirty || migrationRequired;
     requiresConflictRef.current = account.requiresConflict;
     versionRef.current = account.version;
-    lastSyncRef.current = account.dirty ? "" : JSON.stringify(account.workspace);
-    setRawWorkspace(account.workspace);
+    lastSyncRef.current = dirtyRef.current ? "" : JSON.stringify(workspace);
+    setRawWorkspace(workspace);
     setCloudUser(account.user);
     setOfflineMode(true);
     setOfflineReady(true);
@@ -331,13 +339,23 @@ export function AppShell() {
         requiresConflictRef.current = false;
         setSyncState("saving");
       } else {
+        const migratedRemote = installMapAfriqueDefaults(remote.state);
+        const migrationRequired = migratedRemote !== remote.state;
         versionRef.current = remote.version;
         lastSyncRef.current = remoteSnapshot;
-        setRawWorkspace(remote.state);
-        setSyncState("synced");
+        dirtyRef.current = migrationRequired;
+        setRawWorkspace(migratedRemote);
+        setSyncState(migrationRequired ? "saving" : "synced");
         const cipher = offlineCipherRef.current;
         if (cipher)
-          await saveSnapshot(cloudUser, remote.state, remote.version, false, cipher, false);
+          await saveSnapshot(
+            cloudUser,
+            migratedRemote,
+            remote.version,
+            migrationRequired,
+            cipher,
+            false,
+          );
       }
     } catch {
       if (offlineCipherRef.current) {
@@ -513,14 +531,28 @@ export function AppShell() {
         const cipher = offlineCipherRef.current;
         requiresConflictRef.current = false;
         if (choice === "remote") {
-          setRawWorkspace(remote.state);
+          const migratedRemote = installMapAfriqueDefaults(remote.state);
+          const migrationRequired = migratedRemote !== remote.state;
+          setRawWorkspace(migratedRemote);
           versionRef.current = remote.version;
           lastSyncRef.current = remoteSnapshot;
-          dirtyRef.current = false;
-          setSyncState("synced");
+          dirtyRef.current = migrationRequired;
+          setSyncState(migrationRequired ? "saving" : "synced");
           if (cipher)
-            await saveSnapshot(cloudUser, remote.state, remote.version, false, cipher, false);
-          notify("La version du compte a été chargée.");
+            await saveSnapshot(
+              cloudUser,
+              migratedRemote,
+              remote.version,
+              migrationRequired,
+              cipher,
+              false,
+            );
+          if (migrationRequired) setRetryToken((value) => value + 1);
+          notify(
+            migrationRequired
+              ? "Le plan comptable MAP Afrique a été chargé et se met à jour."
+              : "La version du compte a été chargée.",
+          );
         } else {
           versionRef.current = remote.version;
           lastSyncRef.current = remoteSnapshot;
@@ -605,7 +637,13 @@ export function AppShell() {
       );
       break;
     default:
-      content = <Dashboard {...viewProps} onNewEntry={() => setActive("new-entry")} />;
+      content = (
+        <Dashboard
+          {...viewProps}
+          userName={displayNameFromEmail(cloudUser.email)}
+          onNewEntry={() => setActive("new-entry")}
+        />
+      );
   }
 
   const mobileItems = ["dashboard", "journal", "projects", "reports", "data"];

@@ -56,7 +56,7 @@ function baseWorkspace(): Workspace {
       createdAt: "2026-02-01T00:00:00.000Z",
       lines: [
         { id: "income-bank", accountNumber: "521", debit: 100, credit: 0 },
-        { id: "income-grant", accountNumber: "741", debit: 0, credit: 100 },
+        { id: "income-grant", accountNumber: "713", debit: 0, credit: 100 },
       ],
     },
     {

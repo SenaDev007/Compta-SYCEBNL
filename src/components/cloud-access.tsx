@@ -261,7 +261,17 @@ export function CloudAccessPage({ onSuccess, onOfflineSuccess }: CloudAccessProp
         </div>
 
         <div className="auth-foot">
-          <span>Comptabilité associative · Projets · États financiers</span>
+          <div className="auth-foot-left">
+            <span>Comptabilité associative · Projets · États financiers</span>
+            <a
+              className="auth-attribution"
+              href="https://www.yehiortech.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Réalisé par <strong>YEHI OR Tech</strong>
+            </a>
+          </div>
           <span className="auth-foot-mark">
             <ArrowUpRight size={15} /> Conçu pour avancer avec confiance
           </span>
